@@ -1,0 +1,22 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+*.py[cod]
+
+# node
+node_modules/
+frontend/dist/
+
+# source corpus PDFs — 62MB of input material. The searchable index
+# (data/index.db) is committed instead; it carries the full page text the app
+# needs at runtime, so the PDFs are only required to rebuild the index.
+data/corpus/
+data/uploads/
+data/index.db-wal
+data/index.db-shm
+
+# os
+.DS_Store
