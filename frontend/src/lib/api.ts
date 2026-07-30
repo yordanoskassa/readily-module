@@ -103,6 +103,8 @@ export interface RunSummary {
   status: "running" | "done" | "error";
   total: number;
   completed: number;
+  /** Guide runs extract more obligations than they coverage-check. */
+  extracted?: number;
   error: string;
   created_at: string;
   counts: Record<string, number>;

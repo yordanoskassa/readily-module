@@ -41,6 +41,9 @@ class Run:
     status: str = "running"          # running | done | error
     total: int = 0
     completed: int = 0
+    # Guide runs extract more obligations than they coverage-check; keep both
+    # so the UI never implies the un-checked ones were missed.
+    extracted: int = 0
     error: str = ""
     created_at: str = field(default_factory=_now)
     items: list[dict] = field(default_factory=list)
@@ -62,6 +65,7 @@ class Run:
             "id": self.id, "kind": self.kind, "title": self.title,
             "source_name": self.source_name, "status": self.status,
             "total": self.total, "completed": self.completed,
+            "extracted": self.extracted,
             "error": self.error, "created_at": self.created_at,
             "counts": counts, "review": reviewed,
             "contradiction_items": contradictions,
@@ -111,6 +115,10 @@ class RunStore:
             error=row["error"] or "", created_at=row["created_at"],
             items=json.loads(row["payload"] or "[]"),
         )
+        # `extracted` is not a column — for a guide run it is simply how many
+        # obligations were pulled out, which is the length of the item list.
+        if run.kind == "guide":
+            run.extracted = len(run.items)
         # A run interrupted by a restart is not still running.
         if run.status == "running":
             run.status = "error"
@@ -234,27 +242,54 @@ async def _run_questionnaire(run: Run, questions: list[dict]) -> None:
 # Guide run
 # --------------------------------------------------------------------------
 
-async def _run_guide(run: Run, pdf_path: Path) -> None:
+def _coverage_order(obligations: list[guide_mod.Obligation]) -> list[int]:
+    """Indices in the order coverage should be checked.
+
+    Extraction is cheap and exhaustive; the coverage pass is the expensive half
+    (one retrieval + one reasoning call each). A 145-page guide yields ~400
+    obligations, which is both costly to check and more than anyone reviews in
+    one sitting. So mandatory obligations are checked first, then recommended,
+    then permissive — if only part of the run is checked, it is the part that
+    creates findings.
+    """
+    rank = {"must": 0, "should": 1, "may": 2}
+    return sorted(
+        range(len(obligations)),
+        key=lambda i: (rank.get(obligations[i].strength, 3), obligations[i].page),
+    )
+
+
+async def _run_guide(run: Run, pdf_path: Path, limit: int | None = None) -> None:
     STORE.publish(run.id, {"type": "phase", "phase": "extracting",
                            "message": "Reading the guide and pulling out obligations"})
     title, obligations = await guide_mod.extract_obligations(pdf_path)
     run.title = title if title and len(title) > 8 else run.title
-    run.total = len(obligations)
     run.items = [
         {**ob.to_dict(), "result": None,
          "review": {"state": "open", "note": "", "updated_at": ""}}
         for ob in obligations
     ]
+
+    order = _coverage_order(obligations)
+    if limit:
+        order = order[:limit]
+    run.total = len(order)
+    run.extracted = len(obligations)
+
     STORE.save(run)
     STORE.publish(run.id, {
-        "type": "extracted", "total": run.total,
+        "type": "extracted", "total": run.total, "extracted": run.extracted,
         "items": run.items,
-        "message": f"Found {run.total} obligations — now checking each against the P&Ps",
+        "message": (
+            f"Found {len(obligations)} obligations — checking "
+            f"{len(order)} against the P&Ps, mandatory ones first"
+        ),
     })
 
     sem = asyncio.Semaphore(get_settings().llm_max_concurrency)
 
-    async def one(index: int, ob: guide_mod.Obligation) -> None:
+    async def one(index: int) -> None:
+        ob = obligations[index]
         async with sem:
             try:
                 result = await guide_mod.assess_coverage(ob)
@@ -273,7 +308,7 @@ async def _run_guide(run: Run, pdf_path: Path) -> None:
             if run.completed % 5 == 0:
                 STORE.save(run)
 
-    await asyncio.gather(*(one(i, ob) for i, ob in enumerate(obligations)))
+    await asyncio.gather(*(one(i) for i in order))
 
 
 # --------------------------------------------------------------------------
@@ -329,14 +364,14 @@ async def start_questionnaire_run(
     return run
 
 
-def start_guide_run(pdf_path: Path, source_name: str) -> Run:
+def start_guide_run(pdf_path: Path, source_name: str, limit: int | None = None) -> Run:
     run = Run(
         id=f"g_{uuid.uuid4().hex[:10]}", kind="guide",
         title=source_name, source_name=source_name,
     )
     STORE._runs[run.id] = run
     STORE.save(run)
-    task = asyncio.create_task(_drive(run, _run_guide(run, pdf_path)))
+    task = asyncio.create_task(_drive(run, _run_guide(run, pdf_path, limit)))
     STORE.register_task(run.id, task)
     return run
 

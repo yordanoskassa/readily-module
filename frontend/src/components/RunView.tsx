@@ -64,6 +64,7 @@ export function RunView({
         const next = {
           ...current,
           total: event.total,
+          extracted: event.extracted,
           items: event.items,
         };
         setPhase(event.message || "");
@@ -232,9 +233,15 @@ export function RunView({
       {/* ------------------------------------------------ tallies */}
       <div className="stats">
         <div className="stat">
-          <div className="v">{run.total}</div>
-          <div className="k">{isGuide ? "Obligations" : "Questions"}</div>
+          <div className="v">{isGuide ? (run.extracted ?? run.total) : run.total}</div>
+          <div className="k">{isGuide ? "Obligations found" : "Questions"}</div>
         </div>
+        {isGuide && (run.extracted ?? 0) > run.total && (
+          <div className="stat">
+            <div className="v">{run.total}</div>
+            <div className="k">Coverage checked</div>
+          </div>
+        )}
         <div className="stat">
           <div className="v" style={{ color: "var(--meadow-600)" }}>
             {counts.supported}
@@ -269,7 +276,7 @@ export function RunView({
       <div className="row wrap" style={{ gap: 6 }}>
         {(
           [
-            ["all", `All ${run.total}`],
+            ["all", `All ${run.items.length}`],
             ["supported", `${isGuide ? "Covered" : "Supported"} ${counts.supported}`],
             ["partial", `Partial ${counts.partial}`],
             ["not_found", `${isGuide ? "Gaps" : "Not found"} ${counts.not_found}`],
@@ -350,10 +357,12 @@ export function RunView({
                           )}
                           <StatusChip status={s} label={label} />
                         </div>
-                      ) : (
+                      ) : run.status === "running" ? (
                         <span className="row" style={{ gap: 6 }}>
                           <span className="spinner" />
                         </span>
+                      ) : (
+                        <span className="tiny muted">not checked</span>
                       )}
                     </td>
                     <td>

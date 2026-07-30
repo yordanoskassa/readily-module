@@ -180,7 +180,7 @@ async def start_questionnaire(body: StartRun) -> dict:
 @app.post("/api/runs/guide")
 async def start_guide(body: StartRun) -> dict:
     path = _resolve_source(body.sample)
-    run = runs_mod.start_guide_run(path, path.name)
+    run = runs_mod.start_guide_run(path, path.name, body.limit)
     return run.to_dict()
 
 
@@ -200,7 +200,7 @@ async def upload(kind: str, file: UploadFile, limit: int | None = None) -> dict:
     if kind == "questionnaire":
         run = await runs_mod.start_questionnaire_run(target, target.name, limit)
     else:
-        run = runs_mod.start_guide_run(target, target.name)
+        run = runs_mod.start_guide_run(target, target.name, limit)
     return run.to_dict()
 
 

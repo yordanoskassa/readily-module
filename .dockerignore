@@ -1,0 +1,17 @@
+# Keep the 62MB source corpus out of the build context; index.db is what ships.
+data/corpus
+data/uploads
+data/index.db-wal
+data/index.db-shm
+
+.env
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+backend/.venv
+backend/tests
+frontend/node_modules
+frontend/dist
+*.md
+.DS_Store
