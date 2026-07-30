@@ -15,10 +15,11 @@ const KIND: Record<Section, "questionnaire" | "guide" | null> = {
   policies: null,
 };
 
+/* Flat, matching the sidebar — there are no Work/Library groups to sit under. */
 const CRUMB: Record<Section, string[]> = {
-  audit: ["Work", "Audit Review"],
-  change: ["Work", "Regulatory Change"],
-  policies: ["Library", "Policies"],
+  audit: ["Audit Review"],
+  change: ["Regulatory Change"],
+  policies: ["Policies"],
 };
 
 export default function App() {

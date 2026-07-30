@@ -45,6 +45,8 @@
   --brand-pollen: #ffe27f;
   --brand-dust: #e9e5e0;
   --brand-stone: #bcb4ab;
+  --brand-violet: #6b3fd4;
+  --brand-violet-soft: #ddd2f5;
 
   /* -- design-system neutrals -------------------------------------------- */
   --ds-neutral-900: #030303;
@@ -117,15 +119,15 @@
   /* -- shadcn surface tokens --------------------------------------------- */
   --radius: 0.5rem;
 
-  --background: var(--ds-warm-300);
-  --foreground: var(--slate-900);
+  --background: #ffffff;
+  --foreground: #0f172b;
 
   --card: #ffffff;
-  --card-foreground: var(--slate-900);
+  --card-foreground: #0f172b;
   --popover: #ffffff;
-  --popover-foreground: var(--slate-900);
+  --popover-foreground: #0f172b;
 
-  --primary: var(--brand-obsidian);
+  --primary: #0f172b;
   --primary-foreground: #ffffff;
 
   --secondary: var(--ds-warm-400);
@@ -142,7 +144,7 @@
 
   --border: var(--slate-200);
   --input: var(--slate-200);
-  --ring: var(--slate-400);
+  --ring: #0f172b;
 
   --chart-1: var(--brand-meadow);
   --chart-2: var(--ds-info);
@@ -219,6 +221,8 @@
   --color-breeze: var(--brand-breeze);
   --color-pollen: var(--brand-pollen);
   --color-dust: var(--brand-dust);
+  --color-violet: var(--brand-violet);
+  --color-violet-soft: var(--brand-violet-soft);
   --color-warm-200: var(--ds-warm-200);
   --color-warm-300: var(--ds-warm-300);
   --color-warm-400: var(--ds-warm-400);
@@ -254,12 +258,14 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
-    font-size: 14px;
+    font-size: 16px;
   }
   h1,
-  h2,
+  h2 {
+    @apply font-sans text-[26px] font-semibold tracking-[-0.02em] leading-tight;
+  }
   h3 {
-    @apply font-display font-light tracking-[-0.015em];
+    @apply font-sans text-[17px] font-semibold tracking-[-0.01em];
   }
   ::selection {
     background: var(--brand-breeze);

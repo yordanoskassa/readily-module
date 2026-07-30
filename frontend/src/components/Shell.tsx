@@ -1,120 +1,72 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import {
   ChevronRight,
   ClipboardCheck,
-  FileStack,
   FileText,
-  FolderOpen,
-  Gavel,
-  Landmark,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCcw,
-  ScrollText,
   Search,
-  ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Logo } from "./Logo";
+import { Logo, LogoMark } from "./Logo";
 
 /** The sections this module implements. */
 export type Section = "audit" | "change" | "policies";
 
-/* Readily's platform surface, taken from their own product copy — "Policies ·
- * Legislation · Regulations · Contracts · Reports · Case Files, all connected on
- * a single platform" — under the Audit Review / Regulatory Change Management /
- * Monitoring pillars.
- *
- * Rendering the whole surface, with everything outside this module visibly inert,
- * is what makes the module's place in the platform legible. Nothing here pretends
- * to work: the dimmed entries say so on hover. */
-type NavEntry = {
-  key: Section | string;
-  label: string;
-  icon: LucideIcon;
-  live: boolean;
-  note?: string;
-};
-
-const OUT_OF_SCOPE = "Part of the Readily platform. Not implemented in this module.";
-
-const GROUPS: { label: string; items: NavEntry[] }[] = [
+/** One flat list — only surfaces this build actually implements. */
+const NAV: { key: Section; label: string; icon: LucideIcon; hint: string }[] = [
   {
-    label: "Work",
-    items: [
-      {
-        key: "audit",
-        label: "Audit Review",
-        icon: ClipboardCheck,
-        live: true,
-        note: "Submission Review Forms — implemented in this module.",
-      },
-      {
-        key: "change",
-        label: "Regulatory Change",
-        icon: RefreshCcw,
-        live: true,
-        note: "Policy Guides and APLs — implemented in this module.",
-      },
-      {
-        key: "monitoring",
-        label: "Monitoring",
-        icon: ShieldCheck,
-        live: false,
-        note: "Delegate universes and data scrubbing. Part of the platform, out of scope here.",
-      },
-    ],
+    key: "audit",
+    label: "Audit Review",
+    icon: ClipboardCheck,
+    hint: "Answer a DHCS Submission Review Form",
   },
   {
-    label: "Library",
-    items: [
-      {
-        key: "policies",
-        label: "Policies",
-        icon: FileText,
-        live: true,
-        note: "373 P&Ps indexed — the corpus this module searches.",
-      },
-      { key: "legislation", label: "Legislation", icon: Landmark, live: false },
-      { key: "regulations", label: "Regulations", icon: Gavel, live: false },
-      { key: "contracts", label: "Contracts", icon: ScrollText, live: false },
-      { key: "reports", label: "Reports", icon: FileStack, live: false },
-      { key: "casefiles", label: "Case Files", icon: FolderOpen, live: false },
-    ],
+    key: "change",
+    label: "Regulatory Change",
+    icon: RefreshCcw,
+    hint: "Pull obligations out of a Policy Guide",
+  },
+  {
+    key: "policies",
+    label: "Policies",
+    icon: FileText,
+    hint: "The 373 P&Ps this module searches",
   },
 ];
 
 function NavItem({
   entry,
   active,
+  collapsed,
   onSelect,
 }: {
-  entry: NavEntry;
+  entry: (typeof NAV)[number];
   active: boolean;
+  collapsed: boolean;
   onSelect: (s: Section) => void;
 }) {
   const row = (
     <button
       type="button"
       aria-current={active ? "page" : undefined}
-      aria-disabled={!entry.live}
-      onClick={() => entry.live && onSelect(entry.key as Section)}
+      onClick={() => onSelect(entry.key)}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px]",
+        "flex w-full items-center rounded-md text-[13px]",
         "duration-[var(--motion-fast)] ease-[var(--ease-standard)]",
         "transition-[background-color,color]",
-        entry.live
-          ? active
-            ? "bg-obsidian font-medium text-white"
-            : "text-slate-700 hover:bg-white"
-          : "cursor-default text-slate-400",
+        collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-2",
+        active
+          ? "bg-obsidian font-medium text-white"
+          : "text-slate-700 hover:bg-white",
       )}
     >
-      <entry.icon className={cn("size-4 shrink-0", !entry.live && "opacity-60")} />
-      <span className="truncate">{entry.label}</span>
-      {!entry.live && (
-        <span aria-hidden className="ml-auto size-1.5 shrink-0 rounded-full bg-slate-300" />
-      )}
+      <entry.icon className="size-4 shrink-0" />
+      {!collapsed && <span className="truncate">{entry.label}</span>}
     </button>
   );
 
@@ -122,8 +74,8 @@ function NavItem({
     <li>
       <Tooltip>
         <TooltipTrigger asChild>{row}</TooltipTrigger>
-        <TooltipContent side="right" className="max-w-64">
-          {entry.note ?? OUT_OF_SCOPE}
+        <TooltipContent side="right">
+          {collapsed ? entry.label : entry.hint}
         </TooltipContent>
       </Tooltip>
     </li>
@@ -143,53 +95,104 @@ export function Shell({
   footer: ReactNode;
   children: ReactNode;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+
   return (
     <div className="flex min-h-screen">
       {/* ---------------------------------------------------------- sidebar
           #faf8f5 is --ds-sidebar, verbatim from Readily's product stylesheet.
-          Fixed width with no collapse control — the toggle was a fiddly
-          affordance for no real gain at this width. */}
-      <aside className="hidden w-[236px] shrink-0 flex-col border-r bg-[#faf8f5] md:flex">
-        <div className="flex flex-col gap-3.5 border-b px-4 py-4">
-          <Logo className="h-7 self-start text-obsidian" />
+          The collapse control lives at the foot of the rail rather than in the
+          main header, so it belongs to the thing it operates on. */}
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col border-r bg-[#faf8f5] md:flex",
+          "duration-[var(--motion-base)] ease-[var(--ease-standard)] transition-[width]",
+          collapsed ? "w-[60px]" : "w-[232px]",
+        )}
+      >
+        <div className={cn("border-b", collapsed ? "px-2" : "px-4")}>
+          {/* Rule between the two identities: Readily is the product, the block
+              below is the tenant. Stacked without it they read as one lockup. */}
+          <div
+            className={cn(
+              "flex items-center border-b py-3",
+              collapsed ? "justify-center" : "justify-between gap-2",
+            )}
+          >
+            {collapsed ? (
+              <LogoMark className="size-6 shrink-0 text-obsidian" />
+            ) : (
+              <Logo className="h-6 shrink-0 text-obsidian" />
+            )}
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={() => setCollapsed(true)}
+                aria-expanded
+                aria-label="Collapse sidebar"
+                className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
+              >
+                <PanelLeftClose className="size-4" />
+              </button>
+            )}
+          </div>
+
           {/* Stands in for the org switcher a real deployment provides. */}
-          <div className="flex items-center gap-2.5">
-            <span className="grid size-7 shrink-0 place-items-center rounded-md bg-meadow text-[11px] font-medium text-white">
-              CO
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium leading-tight">
-                CalOptima Health
-              </p>
-              <p className="truncate text-[11px] leading-tight text-muted-foreground">
-                Orange County · Medi-Cal
-              </p>
+          <div className={cn("py-3.5", collapsed && "flex justify-center")}>
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="grid size-7 place-items-center rounded-md bg-meadow text-[11px] font-medium text-white">
+                  CO
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right">CalOptima Health</TooltipContent>
+            </Tooltip>
+          ) : (
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-meadow text-[11px] font-medium text-white">
+                CO
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-medium leading-tight">
+                  CalOptima Health
+                </p>
+                <p className="truncate text-[11px] leading-tight text-muted-foreground">
+                  Orange County &middot; Medi-Cal
+                </p>
+              </div>
             </div>
+          )}
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2.5 py-4">
-          {GROUPS.map((g) => (
-            <div key={g.label} className="mb-5">
-              <p className="label-1 px-2.5 pb-1.5">{g.label}</p>
-              <ul className="flex flex-col gap-0.5">
-                {g.items.map((e) => (
-                  <NavItem
-                    key={e.key}
-                    entry={e}
-                    active={section === e.key}
-                    onSelect={onSection}
-                  />
-                ))}
-              </ul>
-            </div>
-          ))}
+        <nav className={cn("flex-1 py-3", collapsed ? "px-2" : "px-2.5")}>
+          <ul className="flex flex-col gap-1">
+            {NAV.map((e) => (
+              <NavItem
+                key={e.key}
+                entry={e}
+                active={section === e.key}
+                collapsed={collapsed}
+                onSelect={onSection}
+              />
+            ))}
+          </ul>
         </nav>
 
-        <p className="border-t px-4 py-3 text-[11px] leading-snug text-muted-foreground">
-          Regulatory Evidence module. Dimmed items are platform surfaces this build
-          does not implement.
-        </p>
+        {collapsed && (
+          <div className="border-t px-2 py-2">
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              aria-expanded={false}
+              aria-label="Expand sidebar"
+              className="flex w-full justify-center rounded-md py-2 text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
+            >
+              <PanelLeftOpen className="size-4" />
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* ------------------------------------------------------------- main */}
@@ -233,7 +236,9 @@ export function Shell({
                     </kbd>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>{OUT_OF_SCOPE}</TooltipContent>
+                <TooltipContent>
+                  Part of the Readily platform. Not implemented in this module.
+                </TooltipContent>
               </Tooltip>
               <span className="grid size-8 place-items-center rounded-full bg-meadow text-[11px] font-medium text-white">
                 AJ
@@ -242,8 +247,8 @@ export function Shell({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1320px] flex-1 px-5 pb-16 pt-6">
-          {children}
+        <main className="w-full flex-1 bg-[#fafafa] px-5 pb-16 pt-6">
+          <div className="mx-auto w-full max-w-[1320px]">{children}</div>
         </main>
 
         <footer className="border-t bg-card px-5 py-3.5 text-xs text-muted-foreground">
