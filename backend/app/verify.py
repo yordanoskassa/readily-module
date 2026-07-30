@@ -245,7 +245,11 @@ CITATION_SCHEMA = llm.obj(
 ASSESSMENT_SCHEMA = llm.obj(
     {
         "status": llm.enum("supported", "partial", "not_found"),
-        "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+        # Structured outputs reject numeric `minimum`/`maximum`, so the range
+        # lives in the description and is clamped when the response is read.
+        "confidence": {"type": "integer",
+                       "description": "0-100: how likely a DHCS reviewer would "
+                                      "accept this citation."},
         "citations": llm.arr(CITATION_SCHEMA, 4),
         "gap": {"type": "string",
                 "description": "What the P&Ps do not say. Empty when status is supported."},
@@ -393,11 +397,15 @@ async def assess_evidence(
         )
 
     s = get_settings()
+    # Only the strongest passages go to the model; the rest are kept by the
+    # caller as runners-up for the UI. Sending all 30 costs more and dilutes
+    # attention without improving the verdict.
+    considered = passages[: s.verify_passages]
     user = (
         f"QUESTION FROM THE REGULATOR\n{question}\n\n"
         f"THE OBLIGATION, RESTATED\n{obligation}\n\n"
         f"CANDIDATE PASSAGES FROM THE PLAN'S P&P LIBRARY\n\n"
-        f"{_render_passages(passages)}"
+        f"{_render_passages(considered)}"
     )
 
     try:
@@ -406,17 +414,25 @@ async def assess_evidence(
             user=user,
             schema=ASSESSMENT_SCHEMA,
             model=s.model_reasoning,
-            max_tokens=3000,
+            # Thinking is on by default on Opus 5 and counts against this cap,
+            # so it needs real headroom. Too low and the response truncates into
+            # an error that would otherwise read as "no evidence found".
+            max_tokens=12000,
             effort="high",
             cache_key="assessment",
         )
     except llm.LLMError as exc:
+        # Deliberately NOT not_found. A failed call must never be presented to
+        # the analyst as an absence of evidence — that is a false compliance gap
+        # and would send her to rewrite a policy that is already fine.
         return Assessment(
-            status="not_found", confidence=0,
-            reasoning="Assessment could not be completed.", error=str(exc),
+            status="error", confidence=0,
+            reasoning="The assessment did not complete, so this question is "
+                      "unanswered. Re-run it.",
+            error=str(exc),
         )
 
-    by_id = {i: p for i, p in enumerate(passages, start=1)}
+    by_id = {i: p for i, p in enumerate(considered, start=1)}
     citations: list[Citation] = []
     discarded: list[dict] = []
 
@@ -457,7 +473,7 @@ async def assess_evidence(
         )
 
     status = data.get("status") or "not_found"
-    confidence = int(data.get("confidence") or 0)
+    confidence = max(0, min(100, int(data.get("confidence") or 0)))
 
     # A claim of support with no surviving verifiable quote is downgraded, not
     # reported. Otherwise the discard guard above would be cosmetic.
@@ -600,7 +616,8 @@ async def contradiction_sweep(
             ),
             schema=CONTRADICTION_SCHEMA,
             model=s.model_reasoning,
-            max_tokens=1600,
+            # Thinking counts toward the cap on Opus 5; leave headroom.
+            max_tokens=6000,
             effort="medium",
             cache_key="contradiction",
         )

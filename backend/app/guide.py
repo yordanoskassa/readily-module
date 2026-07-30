@@ -175,7 +175,7 @@ async def extract_obligations(pdf_path: str | Path) -> tuple[str, list[Obligatio
             user=f"Pages {w[0][0]}-{w[-1][0]} of the guide.\n\n{_render_window(w)}",
             schema=OBLIGATION_SCHEMA,
             model=s.model_fast,
-            max_tokens=8000,
+            max_tokens=16000,
             effort="medium",
             cache_key="obligations",
         )

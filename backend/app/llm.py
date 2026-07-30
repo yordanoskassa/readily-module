@@ -168,8 +168,14 @@ def enum(*values: str) -> dict:
     return {"type": "string", "enum": list(values)}
 
 
-def arr(items: dict[str, Any], max_items: int | None = None) -> dict:
+def arr(items: dict[str, Any], soft_max: int | None = None) -> dict:
+    """An array field.
+
+    `soft_max` is advisory only — structured outputs reject `maxItems`, so the
+    ceiling is stated in the field description (and in the system prompt) rather
+    than enforced by the schema. Callers slice defensively when it matters.
+    """
     schema: dict[str, Any] = {"type": "array", "items": items}
-    if max_items:
-        schema["maxItems"] = max_items
+    if soft_max:
+        schema["description"] = f"At most {soft_max} entries."
     return schema

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     model_fast: str = "claude-sonnet-5"
     # Strong model for the judgement calls Alex is accountable for.
     model_reasoning: str = "claude-opus-5"
-    llm_max_concurrency: int = 6
+    llm_max_concurrency: int = 10
 
     # --- storage ---
     data_dir: Path = REPO_DIR / "data"

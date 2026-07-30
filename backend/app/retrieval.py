@@ -110,7 +110,7 @@ async def expand_question(question: str) -> Expansion:
             user=f"Regulatory question:\n{question}",
             schema=EXPANSION_SCHEMA,
             model=s.model_fast,
-            max_tokens=1200,
+            max_tokens=2500,
             effort="low",
             cache_key="expansion",
         )
