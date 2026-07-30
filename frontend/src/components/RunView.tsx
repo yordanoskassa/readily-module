@@ -1,101 +1,110 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Download, Loader2, Square } from "lucide-react";
+import { ANSWER_LABEL, COVERAGE_LABEL, STATUS_LABEL, api, streamRun } from "@/lib/api";
+import type { Item, ReviewState, Run } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import {
-  ANSWER_LABEL,
-  COVERAGE_LABEL,
-  STATUS_LABEL,
-  api,
-  streamRun,
-} from "../lib/api";
-import type { Item, ReviewState, Run } from "../lib/api";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Chip, Confidence, Empty, Spinner, StatusChip } from "./bits";
 import { EvidencePanel } from "./EvidencePanel";
 
 type Filter = "all" | "supported" | "partial" | "not_found" | "error" | "flagged" | "conflicts";
 
+/** Guide coverage verdicts map onto the questionnaire's three, so filters,
+ *  tallies and chips stay one code path. */
+const COVERAGE_AS_STATUS: Record<string, string> = {
+  covered: "supported",
+  partial: "partial",
+  gap: "not_found",
+  error: "error",
+};
+
 function itemKey(item: Item, kind: string) {
   return kind === "guide" ? item.id! : String(item.number);
 }
 
-export function RunView({
-  runId,
-  onExit,
-}: {
-  runId: string;
-  onExit: () => void;
-}) {
+function normalisedStatus(item: Item, isGuide: boolean): string | undefined {
+  if (!item.result) return undefined;
+  return isGuide
+    ? COVERAGE_AS_STATUS[item.result.coverage_status ?? "error"]
+    : item.result.status;
+}
+
+export function RunView({ runId, onExit }: { runId: string; onExit: () => void }) {
   const [run, setRun] = useState<Run | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [phase, setPhase] = useState("");
-  const runRef = useRef<Run | null>(null);
 
-  // Keep a ref alongside state so SSE handlers merge into the latest snapshot
-  // without needing the effect to re-subscribe on every update.
-  useEffect(() => {
-    runRef.current = run;
-  }, [run]);
-
+  // Every SSE merge goes through the functional form of setState, so the handler
+  // never reads `run` out of its closure. That lets this effect depend only on
+  // `runId` — no ref mirroring state, and no stale snapshots.
   useEffect(() => {
     let live = true;
     setRun(null);
     setError("");
+    setPhase("");
+
     api
       .run(runId)
-      .then((r) => {
-        if (!live) return;
-        setRun(r);
-        runRef.current = r;
-      })
+      .then((r) => live && setRun(r))
       .catch((e) => live && setError(String(e.message ?? e)));
 
     const stop = streamRun(runId, (event) => {
-      const current = runRef.current;
-      if (event.type === "snapshot") {
-        setRun(event.run);
-        runRef.current = event.run;
-        return;
-      }
-      if (!current) return;
+      if (!live) return;
 
-      if (event.type === "phase") {
-        setPhase(event.message || "");
-      } else if (event.type === "extracted") {
-        const next = {
-          ...current,
-          total: event.total,
-          extracted: event.extracted,
-          items: event.items,
-        };
-        setPhase(event.message || "");
-        setRun(next);
-        runRef.current = next;
-      } else if (event.type === "item" || event.type === "review") {
-        const kind = current.kind;
-        const key = itemKey(event.item, kind);
-        const items = current.items.map((it) =>
-          itemKey(it, kind) === key ? event.item : it,
-        );
-        const next = {
-          ...current,
-          items,
-          completed: event.completed ?? current.completed,
-          total: event.total ?? current.total,
-        };
-        setRun(next);
-        runRef.current = next;
-      } else if (event.type === "done") {
-        const next = { ...current, ...event.run };
-        setPhase("");
-        setRun(next);
-        runRef.current = next;
-        // Refetch so counts and review tallies come from the server.
-        api.run(runId).then((r) => {
-          setRun(r);
-          runRef.current = r;
-        });
+      switch (event.type) {
+        case "snapshot":
+          setRun(event.run);
+          break;
+
+        case "phase":
+          setPhase(event.message ?? "");
+          break;
+
+        case "extracted":
+          setPhase(event.message ?? "");
+          setRun((prev) =>
+            prev
+              ? { ...prev, total: event.total, extracted: event.extracted, items: event.items }
+              : prev,
+          );
+          break;
+
+        case "item":
+        case "review":
+          setRun((prev) => {
+            if (!prev) return prev;
+            const key = itemKey(event.item, prev.kind);
+            return {
+              ...prev,
+              items: prev.items.map((it) =>
+                itemKey(it, prev.kind) === key ? event.item : it,
+              ),
+              completed: event.completed ?? prev.completed,
+              total: event.total ?? prev.total,
+            };
+          });
+          break;
+
+        case "done":
+          setPhase("");
+          setRun((prev) => (prev ? { ...prev, ...event.run } : prev));
+          // Refetch so tallies come from the server rather than being accumulated.
+          api.run(runId).then((r) => live && setRun(r));
+          break;
       }
     });
+
     return () => {
       live = false;
       stop();
@@ -104,19 +113,33 @@ export function RunView({
 
   const isGuide = run?.kind === "guide";
 
+  /** One pass over the items for every tally the header shows. */
+  const tally = useMemo(() => {
+    const counts = { supported: 0, partial: 0, not_found: 0, error: 0 };
+    let conflicts = 0;
+    let flagged = 0;
+    let accepted = 0;
+    let answered = 0;
+    for (const it of run?.items ?? []) {
+      const s = normalisedStatus(it, !!isGuide);
+      if (s) {
+        counts[s as keyof typeof counts]++;
+        answered++;
+      }
+      if ((it.result?.contradictions?.length ?? 0) > 0) conflicts++;
+      if (it.review?.state === "flagged") flagged++;
+      if (it.review?.state === "accepted") accepted++;
+    }
+    return { counts, conflicts, flagged, accepted, answered };
+  }, [run?.items, isGuide]);
+
   const filtered = useMemo(() => {
     if (!run) return [];
-    return run.items.filter((it) => {
-      if (filter === "all") return true;
-      if (filter === "flagged") return it.review?.state === "flagged";
-      if (filter === "conflicts") return (it.result?.contradictions?.length ?? 0) > 0;
-      const s = isGuide
-        ? { covered: "supported", partial: "partial", gap: "not_found", error: "error" }[
-            it.result?.coverage_status ?? "error"
-          ]
-        : it.result?.status;
-      return s === filter;
-    });
+    if (filter === "all") return run.items;
+    if (filter === "flagged") return run.items.filter((it) => it.review?.state === "flagged");
+    if (filter === "conflicts")
+      return run.items.filter((it) => (it.result?.contradictions?.length ?? 0) > 0);
+    return run.items.filter((it) => normalisedStatus(it, !!isGuide) === filter);
   }, [run, filter, isGuide]);
 
   const selectedItem = useMemo(
@@ -124,192 +147,183 @@ export function RunView({
     [run, selected],
   );
 
-  async function handleReview(state: ReviewState, note: string) {
-    if (!run || !selectedItem) return;
-    const key = itemKey(selectedItem, run.kind);
-    const updated = await api.review(run.id, key, { state, note });
-    const items = run.items.map((it) => (itemKey(it, run.kind) === key ? updated : it));
-    const next = { ...run, items };
-    setRun(next);
-    runRef.current = next;
-  }
+  /** Replace one item after an interaction. Functional form again, so this stays
+   *  referentially stable and is safe to pass down. */
+  const applyItem = useCallback((updated: Item) => {
+    setRun((prev) =>
+      prev
+        ? {
+            ...prev,
+            items: prev.items.map((it) =>
+              itemKey(it, prev.kind) === itemKey(updated, prev.kind) ? updated : it,
+            ),
+          }
+        : prev,
+    );
+  }, []);
+
+  const handleReview = useCallback(
+    async (state: ReviewState, note: string) => {
+      if (!selectedItem || !run) return;
+      applyItem(await api.review(run.id, itemKey(selectedItem, run.kind), { state, note }));
+    },
+    [run, selectedItem, applyItem],
+  );
 
   if (error) {
     return (
       <Empty title="Could not load this run">
-        <p>{error}</p>
-        <button className="btn secondary" onClick={onExit}>
+        <p className="mb-4">{error}</p>
+        <Button variant="secondary" onClick={onExit}>
           Back
-        </button>
+        </Button>
       </Empty>
     );
   }
   if (!run) {
     return (
-      <div className="card card-pad">
+      <Card className="p-5">
         <Spinner label="Loading run…" />
-      </div>
+      </Card>
     );
   }
 
-  const answered = run.items.filter((i) => i.result).length;
+  const { counts, conflicts, flagged, accepted, answered } = tally;
   const pct = run.total ? Math.round((answered / run.total) * 100) : 0;
 
-  const counts = { supported: 0, partial: 0, not_found: 0, error: 0 };
-  let conflicts = 0;
-  let flagged = 0;
-  let accepted = 0;
-  for (const it of run.items) {
-    const s = isGuide
-      ? { covered: "supported", partial: "partial", gap: "not_found", error: "error" }[
-          it.result?.coverage_status ?? "error"
-        ]
-      : it.result?.status;
-    if (it.result && s) counts[s as keyof typeof counts]++;
-    if ((it.result?.contradictions?.length ?? 0) > 0) conflicts++;
-    if (it.review?.state === "flagged") flagged++;
-    if (it.review?.state === "accepted") accepted++;
-  }
+  const filters: [Filter, string][] = [
+    ["all", `All ${run.items.length}`],
+    ["supported", `${isGuide ? "Covered" : "Supported"} ${counts.supported}`],
+    ["partial", `Partial ${counts.partial}`],
+    ["not_found", `${isGuide ? "Gaps" : "Not found"} ${counts.not_found}`],
+  ];
+  if (counts.error) filters.push(["error", `Errors ${counts.error}`]);
+  if (conflicts) filters.push(["conflicts", `Conflicts ${conflicts}`]);
+  if (flagged) filters.push(["flagged", `Flagged ${flagged}`]);
+
+  const stats: [string, number, string][] = [
+    [
+      isGuide ? "Obligations found" : "Questions",
+      isGuide ? (run.extracted ?? run.total) : run.total,
+      "",
+    ],
+    ...((isGuide && (run.extracted ?? 0) > run.total
+      ? [["Coverage checked", run.total, ""]]
+      : []) as [string, number, string][]),
+    [isGuide ? "Covered" : "Supported", counts.supported, "text-meadow-600"],
+    ["Partial", counts.partial, "text-pollen-500"],
+    [isGuide ? "Gaps" : "Not found", counts.not_found, ""],
+    ["Conflicts", conflicts, ""],
+    ["Accepted", accepted, ""],
+    ["Flagged", flagged, ""],
+  ];
 
   return (
-    <div className="stack" style={{ gap: 16 }}>
-      {/* ------------------------------------------------ run header */}
-      <div className="stack" style={{ gap: 10 }}>
-        <div className="spread">
-          <div className="stack" style={{ gap: 4 }}>
-            <div className="label">
+    <div className="flex flex-col gap-4">
+      {/* ------------------------------------------------ header */}
+      <div className="flex flex-col gap-2.5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="label-1">
               {isGuide ? "Policy Guide review" : "Submission Review Form"}
-            </div>
-            <h1 style={{ fontSize: 26, maxWidth: 900 }}>{run.title}</h1>
-            <div className="tiny muted">
+            </span>
+            <h1 className="max-w-3xl text-[26px] leading-tight">{run.title}</h1>
+            <p className="text-xs text-muted-foreground">
               {run.source_name} · started {run.created_at.replace("T", " ").slice(0, 16)}
-            </div>
+            </p>
           </div>
-          <div className="row" style={{ gap: 8 }}>
-            <a className="btn secondary small" href={`/api/runs/${run.id}/export.csv`}>
-              Export CSV
-            </a>
-            <a
-              className="btn ghost small"
-              href={`/api/runs/${run.id}/export.json`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              JSON
-            </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="secondary" size="sm">
+              <a href={`/api/runs/${run.id}/export.csv`}>
+                <Download className="size-3.5" /> Export CSV
+              </a>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <a href={`/api/runs/${run.id}/export.json`} target="_blank" rel="noreferrer">
+                JSON
+              </a>
+            </Button>
             {run.status === "running" && (
-              <button
-                className="btn ghost small"
-                onClick={() => api.cancelRun(run.id)}
-              >
-                Stop
-              </button>
+              <Button variant="ghost" size="sm" onClick={() => api.cancelRun(run.id)}>
+                <Square className="size-3.5" /> Stop
+              </Button>
             )}
-            <button className="btn ghost small" onClick={onExit}>
+            <Button variant="ghost" size="sm" onClick={onExit}>
               All runs
-            </button>
+            </Button>
           </div>
         </div>
 
         {run.status === "running" && (
-          <div className="stack" style={{ gap: 6 }}>
-            <div className="progress">
-              <span style={{ width: `${pct}%` }} />
-            </div>
-            <div className="row" style={{ gap: 10 }}>
-              <Spinner />
-              <span className="small muted">
-                {phase ||
-                  `${answered} of ${run.total} ${isGuide ? "obligations" : "questions"} checked`}
-              </span>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Progress
+              value={pct}
+              className="h-1 bg-dust [&>[data-slot=progress-indicator]]:bg-obsidian"
+            />
+            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />
+              {phase ||
+                `${answered} of ${run.total} ${isGuide ? "obligations" : "questions"} checked`}
+            </span>
           </div>
         )}
         {run.status === "error" && run.error && (
-          <div className="banner alert">{run.error}</div>
+          <Card className="border-[#e0b39f] bg-brick-100 px-4 py-2.5 text-sm text-brick-700">
+            {run.error}
+          </Card>
         )}
       </div>
 
       {/* ------------------------------------------------ tallies */}
-      <div className="stats">
-        <div className="stat">
-          <div className="v">{isGuide ? (run.extracted ?? run.total) : run.total}</div>
-          <div className="k">{isGuide ? "Obligations found" : "Questions"}</div>
-        </div>
-        {isGuide && (run.extracted ?? 0) > run.total && (
-          <div className="stat">
-            <div className="v">{run.total}</div>
-            <div className="k">Coverage checked</div>
+      <div className="flex flex-wrap divide-x divide-border overflow-hidden rounded-lg border bg-card">
+        {stats.map(([k, v, tone]) => (
+          <div key={k} className="min-w-[104px] flex-1 px-4 py-3">
+            <div className={`font-serif text-2xl font-light leading-none ${tone}`}>{v}</div>
+            <div className="label-1 mt-1.5">{k}</div>
           </div>
-        )}
-        <div className="stat">
-          <div className="v" style={{ color: "var(--meadow-600)" }}>
-            {counts.supported}
-          </div>
-          <div className="k">{isGuide ? "Covered" : "Supported"}</div>
-        </div>
-        <div className="stat">
-          <div className="v" style={{ color: "var(--pollen-500)" }}>
-            {counts.partial}
-          </div>
-          <div className="k">Partial</div>
-        </div>
-        <div className="stat">
-          <div className="v">{counts.not_found}</div>
-          <div className="k">{isGuide ? "Gaps" : "Not found"}</div>
-        </div>
-        <div className="stat">
-          <div className="v">{conflicts}</div>
-          <div className="k">Conflicts</div>
-        </div>
-        <div className="stat">
-          <div className="v">{accepted}</div>
-          <div className="k">Accepted</div>
-        </div>
-        <div className="stat">
-          <div className="v">{flagged}</div>
-          <div className="k">Flagged</div>
-        </div>
+        ))}
       </div>
 
       {/* ------------------------------------------------ filters */}
-      <div className="row wrap" style={{ gap: 6 }}>
-        {(
-          [
-            ["all", `All ${run.items.length}`],
-            ["supported", `${isGuide ? "Covered" : "Supported"} ${counts.supported}`],
-            ["partial", `Partial ${counts.partial}`],
-            ["not_found", `${isGuide ? "Gaps" : "Not found"} ${counts.not_found}`],
-            ...(counts.error ? ([["error", `Errors ${counts.error}`]] as const) : []),
-            ...(conflicts ? ([["conflicts", `Conflicts ${conflicts}`]] as const) : []),
-            ...(flagged ? ([["flagged", `Flagged ${flagged}`]] as const) : []),
-          ] as [Filter, string][]
-        ).map(([key, label]) => (
-          <button
+      <div className="flex flex-wrap gap-2">
+        {filters.map(([key, label]) => (
+          <Button
             key={key}
-            className={`btn ${filter === key ? "" : "ghost"} small`}
+            size="sm"
+            variant={filter === key ? "default" : "outline"}
+            className="h-7 rounded-full text-xs"
             onClick={() => setFilter(key)}
           >
             {label}
-          </button>
+          </Button>
         ))}
       </div>
 
       {/* ------------------------------------------------ table + panel */}
-      <div className={selectedItem ? "split card" : "card"}>
-        <div style={{ overflowX: "auto" }}>
-          <table className="grid">
-            <thead>
-              <tr>
-                <th style={{ width: 40 }}>#</th>
-                <th>{isGuide ? "Obligation" : "Question"}</th>
-                <th style={{ width: 118 }}>{isGuide ? "Coverage" : "Answer"}</th>
-                <th style={{ width: 150 }}>Citation</th>
-                <th style={{ width: 92 }}>Conf.</th>
-                <th style={{ width: 96 }}>Review</th>
-              </tr>
-            </thead>
-            <tbody>
+      <Card
+        className={`overflow-hidden p-0 ${
+          selectedItem ? "grid grid-cols-1 items-start lg:grid-cols-[minmax(0,1fr)_460px]" : ""
+        }`}
+      >
+        <div className="min-w-0">
+          <Table>
+            {/* Header is deliberately not sticky. shadcn wraps Table in an
+                overflow-x-auto container, which becomes the containing block for
+                sticky children — so a `top` offset is measured against that box
+                rather than the viewport and the header lands on top of row 1. */}
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10">#</TableHead>
+                <TableHead>{isGuide ? "Obligation" : "Question"}</TableHead>
+                <TableHead className="w-[116px]">
+                  {isGuide ? "Coverage" : "Answer"}
+                </TableHead>
+                <TableHead className="w-[150px]">Citation</TableHead>
+                <TableHead className="w-[90px]">Conf.</TableHead>
+                <TableHead className="w-[92px]">Review</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.map((it) => {
                 const key = itemKey(it, run.kind);
                 const r = it.result;
@@ -318,67 +332,78 @@ export function RunView({
                   ? COVERAGE_LABEL[r?.coverage_status ?? "error"]
                   : STATUS_LABEL[r?.status ?? "error"];
                 const first = r?.citations?.[0];
+                const isSelected = selected === key;
+
                 return (
-                  <tr
+                  <TableRow
                     key={key}
-                    aria-selected={selected === key}
-                    onClick={() => setSelected(selected === key ? null : key)}
+                    data-state={isSelected ? "selected" : undefined}
+                    className="cursor-pointer align-top"
+                    onClick={() => setSelected(isSelected ? null : key)}
                   >
-                    <td className="num">{isGuide ? it.id?.replace("ob", "") : it.number}</td>
-                    <td>
-                      <div style={{ maxWidth: 620 }}>
+                    <TableCell className="font-mono text-[11px] text-muted-foreground">
+                      {isGuide ? it.id?.replace("ob", "") : it.number}
+                    </TableCell>
+                    <TableCell>
+                      <p className="max-w-[560px] whitespace-normal">
                         {isGuide ? it.obligation : it.question}
-                      </div>
-                      <div className="row wrap" style={{ gap: 5, marginTop: 5 }}>
-                        {isGuide && it.strength === "must" && (
-                          <Chip tone="alert">must</Chip>
-                        )}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {isGuide && it.strength === "must" && <Chip tone="alert">must</Chip>}
                         {isGuide && it.page ? (
-                          <span className="tiny muted mono">guide p. {it.page}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            guide p. {it.page}
+                          </span>
                         ) : null}
                         {(r?.contradictions?.length ?? 0) > 0 && (
-                          <Chip tone="warn" title="Conflicting language found elsewhere in the same policy">
-                            ⚠ {r!.contradictions.length} conflict
+                          <Chip
+                            tone="warn"
+                            title="Conflicting language elsewhere in the same policy"
+                          >
+                            <AlertTriangle className="size-3" />
+                            {r!.contradictions.length} conflict
                             {r!.contradictions.length > 1 ? "s" : ""}
                           </Chip>
                         )}
                         {(r?.discarded_quotes?.length ?? 0) > 0 && (
-                          <Chip tone="plain" title="A proposed quote was withheld because it could not be found in the source">
+                          <Chip title="A proposed quote could not be found in the source">
                             {r!.discarded_quotes.length} withheld
                           </Chip>
                         )}
+                        {(it.thread?.length ?? 0) > 0 && (
+                          <Chip tone="info">
+                            {it.thread!.length} follow-up
+                            {it.thread!.length > 1 ? "s" : ""}
+                          </Chip>
+                        )}
                       </div>
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       {r ? (
-                        <div className="row" style={{ gap: 6 }}>
+                        <div className="flex items-center gap-1.5">
                           {!isGuide && r.status !== "error" && (
-                            <strong className="small">{ANSWER_LABEL[r.status]}</strong>
+                            <strong className="text-sm">{ANSWER_LABEL[r.status]}</strong>
                           )}
                           <StatusChip status={s} label={label} />
                         </div>
                       ) : run.status === "running" ? (
-                        <span className="row" style={{ gap: 6 }}>
-                          <span className="spinner" />
-                        </span>
+                        <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
                       ) : (
-                        <span className="tiny muted">not checked</span>
+                        <span className="text-xs text-muted-foreground">not checked</span>
                       )}
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       {first ? (
-                        <div className="stack" style={{ gap: 3 }}>
-                          <span className="mono tiny">{first.cite}</span>
-                          {!first.quote_check.verified && (
-                            <Chip tone="alert">unverified</Chip>
-                          )}
+                        <div className="flex flex-col gap-1">
+                          <span className="font-mono text-[11px]">{first.cite}</span>
+                          {!first.quote_check.verified && <Chip tone="alert">unverified</Chip>}
                         </div>
                       ) : (
-                        <span className="tiny muted">—</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
-                    </td>
-                    <td>{r ? <Confidence value={r.confidence} /> : null}</td>
-                    <td>
+                    </TableCell>
+                    <TableCell>{r ? <Confidence value={r.confidence} /> : null}</TableCell>
+                    <TableCell>
                       {it.review?.state !== "open" ? (
                         <Chip
                           tone={
@@ -392,37 +417,40 @@ export function RunView({
                           {it.review.state}
                         </Chip>
                       ) : (
-                        <span className="tiny muted">open</span>
+                        <span className="text-xs text-muted-foreground">open</span>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           {filtered.length === 0 && (
-            <div className="empty">
-              <p className="muted">Nothing matches this filter.</p>
-            </div>
+            <p className="px-6 py-12 text-center text-sm text-muted-foreground">
+              Nothing matches this filter.
+            </p>
           )}
         </div>
 
         {selectedItem && (
+          // `key` remounts the panel when the row changes, which resets its local
+          // form state without an effect that watches the item.
           <EvidencePanel
+            key={itemKey(selectedItem, run.kind)}
             run={run}
             item={selectedItem}
             onClose={() => setSelected(null)}
             onReview={handleReview}
+            onItemChanged={applyItem}
           />
         )}
-      </div>
+      </Card>
 
-      <div className="tiny muted" style={{ maxWidth: 760 }}>
-        Every quote shown has been checked character-for-character against the source
-        policy document. Verdicts on borderline questions are judgements, not facts —
-        the confidence score and the “check this yourself” note are there to tell you
-        where to spend your attention.
-      </div>
+      <p className="max-w-3xl text-xs text-muted-foreground">
+        Every quote shown has been checked character-for-character against the source policy
+        document. Verdicts on borderline questions are judgements, not facts — the confidence
+        score and the “check this yourself” note tell you where to spend your attention.
+      </p>
     </div>
   );
 }

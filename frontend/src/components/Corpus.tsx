@@ -1,188 +1,224 @@
-import { useEffect, useState } from "react";
-import { api } from "../lib/api";
-import type { Candidate, DocRow } from "../lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { Search, X } from "lucide-react";
+import { api } from "@/lib/api";
+import type { Candidate, DocRow } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Chip, Empty, Spinner } from "./bits";
+
+const ALL = "__all__";
 
 /** The P&P library, plus a raw search box.
  *
- * The search box runs the same lexical layer the answer engine uses, with no
- * model in the loop. It is here so the retrieval step is inspectable rather
- * than a black box — and so the Ctrl-F comparison is easy to demonstrate. */
+ *  The search box runs the same lexical layer the answer engine uses, with no
+ *  model in the loop — so retrieval is inspectable rather than a black box, and
+ *  the Ctrl-F comparison is easy to demonstrate. */
 export function Corpus() {
   const [docs, setDocs] = useState<DocRow[] | null>(null);
   const [programs, setPrograms] = useState<{ program: string; n: number }[]>([]);
-  const [program, setProgram] = useState("");
+  const [program, setProgram] = useState(ALL);
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Candidate[] | null>(null);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    api.corpus({ program: program || undefined, q: filter || undefined }).then((r) => {
-      setDocs(r.documents);
-      if (r.programs.length) setPrograms(r.programs);
-    });
+    let live = true;
+    // Debounced so typing in the filter does not fire a request per keystroke.
+    const t = setTimeout(() => {
+      api
+        .corpus({
+          program: program === ALL ? undefined : program,
+          q: filter || undefined,
+        })
+        .then((r) => {
+          if (!live) return;
+          setDocs(r.documents);
+          if (r.programs.length) setPrograms(r.programs);
+        });
+    }, 220);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
   }, [program, filter]);
 
-  async function runSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) {
-      setResults(null);
-      return;
-    }
-    setSearching(true);
-    try {
-      setResults((await api.search(query)).results);
-    } finally {
-      setSearching(false);
-    }
-  }
+  const runSearch = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!query.trim()) {
+        setResults(null);
+        return;
+      }
+      setSearching(true);
+      try {
+        setResults((await api.search(query)).results);
+      } finally {
+        setSearching(false);
+      }
+    },
+    [query],
+  );
 
   return (
-    <div className="stack" style={{ gap: 20 }}>
-      <div className="stack" style={{ gap: 8 }}>
-        <div className="label">Policy library</div>
-        <h1>The plan&apos;s P&amp;Ps</h1>
-        <p className="muted" style={{ maxWidth: 660 }}>
-          Everything the answer engine searches. The search box below runs the same
-          lexical layer with no model involved, so you can see exactly which passages
-          retrieval surfaces before any judgement is applied.
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
+        <span className="label-1">Policy library</span>
+        <h1 className="text-[34px] leading-tight">The plan&apos;s P&amp;Ps</h1>
+        <p className="max-w-2xl text-muted-foreground">
+          Everything the answer engine searches. The search box below runs the same lexical layer
+          with no model involved, so you can see exactly which passages retrieval surfaces before
+          any judgement is applied.
         </p>
       </div>
 
       {/* ---------------------------------------------- passage search */}
-      <div className="card card-pad">
-        <form onSubmit={runSearch} className="row" style={{ gap: 8 }}>
-          <input
-            className="input grow"
-            placeholder="Search the full text — e.g. hospice election notice five calendar days"
+      <Card className="p-5">
+        <form onSubmit={runSearch} className="flex flex-wrap gap-2">
+          <Input
+            className="min-w-64 flex-1"
+            placeholder="Search full text — e.g. hospice election notice five calendar days"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button className="btn" type="submit" disabled={searching}>
+          <Button type="submit" disabled={searching}>
+            <Search className="size-3.5" />
             {searching ? "Searching…" : "Search"}
-          </button>
+          </Button>
           {results && (
-            <button
-              className="btn ghost"
+            <Button
               type="button"
+              variant="ghost"
               onClick={() => {
                 setResults(null);
                 setQuery("");
               }}
             >
-              Clear
-            </button>
+              <X className="size-3.5" /> Clear
+            </Button>
           )}
         </form>
 
         {results && (
-          <div className="stack" style={{ gap: 10, marginTop: 16 }}>
-            <div className="label">{results.length} passages</div>
+          <div className="mt-4 flex flex-col gap-2.5">
+            <span className="label-1">{results.length} passages</span>
             {results.length === 0 && (
-              <p className="small muted">
-                No passage matched. Try the plan&apos;s own vocabulary — the answer
-                engine does this translation for you automatically.
+              <p className="text-sm text-muted-foreground">
+                No passage matched. Try the plan&apos;s own vocabulary — the answer engine does
+                that translation for you automatically.
               </p>
             )}
             {results.map((r, i) => (
-              <div key={i} className="card" style={{ padding: 12 }}>
-                <div className="row wrap" style={{ gap: 8, marginBottom: 6 }}>
-                  <strong className="mono small">{r.cite}</strong>
-                  <span className="tiny muted truncate" style={{ maxWidth: 420 }}>
-                    {r.title}
-                  </span>
-                  {r.heading && <Chip tone="plain">{r.heading}</Chip>}
+              <Card key={i} className="gap-1.5 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <strong className="font-mono text-[13px]">{r.cite}</strong>
+                  <span className="truncate text-xs text-muted-foreground">{r.title}</span>
+                  {r.heading && <Chip>{r.heading}</Chip>}
                 </div>
-                <div className="tiny" style={{ lineHeight: 1.6 }}>
+                <p className="text-xs leading-relaxed text-muted-foreground">
                   {r.excerpt?.slice(0, 420)}…
-                </div>
-              </div>
+                </p>
+              </Card>
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* ---------------------------------------------- document list */}
-      <div className="card">
-        <div className="card-pad row wrap" style={{ gap: 10 }}>
-          <input
-            className="input"
-            style={{ maxWidth: 320 }}
+      <Card className="gap-0 overflow-hidden p-0">
+        <div className="flex flex-wrap items-center gap-3 p-4">
+          <Input
+            className="max-w-80"
             placeholder="Filter by title, code or department"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
-          <select
-            className="input"
-            style={{ maxWidth: 190 }}
-            value={program}
-            onChange={(e) => setProgram(e.target.value)}
-          >
-            <option value="">All programmes</option>
-            {programs.map((p) => (
-              <option key={p.program} value={p.program}>
-                {p.program} ({p.n})
-              </option>
-            ))}
-          </select>
-          <span className="tiny muted">
+          <Select value={program} onValueChange={setProgram}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All programmes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All programmes</SelectItem>
+              {programs.map((p) => (
+                <SelectItem key={p.program} value={p.program}>
+                  {p.program} ({p.n})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground">
             {docs ? `${docs.length} documents` : ""}
           </span>
         </div>
 
         {!docs ? (
-          <div className="card-pad">
+          <div className="p-5">
             <Spinner label="Loading library…" />
           </div>
         ) : docs.length === 0 ? (
           <Empty title="No documents match" />
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="grid">
-              <thead>
-                <tr>
-                  <th style={{ width: 92 }}>Policy</th>
-                  <th>Title</th>
-                  <th style={{ width: 165 }}>Department</th>
-                  <th style={{ width: 145 }}>Applies to</th>
-                  <th style={{ width: 90 }}>Revised</th>
-                  <th style={{ width: 56 }}>Pages</th>
-                </tr>
-              </thead>
-              <tbody>
-                {docs.map((d) => (
-                  <tr key={d.id} style={{ cursor: "default" }}>
-                    <td className="mono tiny">{d.policy_code}</td>
-                    <td>
-                      <div className="small">{d.title}</div>
-                      {d.section && d.section !== "Not Applicable" && (
-                        <div className="tiny muted">{d.section}</div>
-                      )}
-                    </td>
-                    <td className="tiny muted">{d.department}</td>
-                    <td>
-                      <div className="row wrap" style={{ gap: 4 }}>
-                        {(d.applicable_to || "")
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean)
-                          .map((s) => (
-                            <Chip key={s} tone="plain">
-                              {s}
-                            </Chip>
-                          ))}
-                      </div>
-                    </td>
-                    <td className="tiny muted mono">{d.revised_date}</td>
-                    <td className="tiny muted mono">{d.n_pages}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[92px]">Policy</TableHead>
+                <TableHead>Title</TableHead>
+                <TableHead className="w-[165px]">Department</TableHead>
+                <TableHead className="w-[150px]">Applies to</TableHead>
+                <TableHead className="w-[92px]">Revised</TableHead>
+                <TableHead className="w-14">Pages</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {docs.map((d) => (
+                <TableRow key={d.id} className="align-top hover:bg-muted/40">
+                  <TableCell className="font-mono text-[11px]">{d.policy_code}</TableCell>
+                  <TableCell>
+                    <p className="whitespace-normal text-sm">{d.title}</p>
+                    {d.section && d.section !== "Not Applicable" && (
+                      <p className="text-xs text-muted-foreground">{d.section}</p>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{d.department}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {(d.applicable_to || "")
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                        .map((s) => (
+                          <Chip key={s}>{s}</Chip>
+                        ))}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-[11px] text-muted-foreground">
+                    {d.revised_date}
+                  </TableCell>
+                  <TableCell className="font-mono text-[11px] text-muted-foreground">
+                    {d.n_pages}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

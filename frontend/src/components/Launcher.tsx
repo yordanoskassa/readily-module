@@ -1,9 +1,16 @@
-import { useEffect, useRef, useState } from "react";
-import { api } from "../lib/api";
-import type { Health, RunSummary } from "../lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FileUp, Play, Trash2 } from "lucide-react";
+import { api } from "@/lib/api";
+import type { Health, RunSummary } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { Chip, Spinner } from "./bits";
 
-/** Start screen for one module: pick the bundled sample or upload a PDF. */
+type Sample = { name: string; kind: string; size_kb: number };
+
+/** Start screen for one module: run a bundled document or upload a PDF. */
 export function Launcher({
   kind,
   health,
@@ -15,216 +22,236 @@ export function Launcher({
   onStarted: (runId: string) => void;
   onOpen: (runId: string) => void;
 }) {
-  const [samples, setSamples] = useState<{ name: string; kind: string; size_kb: number }[]>([]);
+  const [samples, setSamples] = useState<Sample[] | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
-  const [preview, setPreview] = useState<{ count: number; title: string } | null>(null);
+  const [count, setCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [limit, setLimit] = useState<number | "">("");
+  const [limit, setLimit] = useState<string>(kind === "guide" ? "30" : "");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const isQ = kind === "questionnaire";
+  const disabled = busy || health?.llm_configured === false;
 
   useEffect(() => {
-    api.samples().then((r) => {
-      const mine = r.samples.filter((s) => s.kind === kind);
+    let live = true;
+    api.samples().then(({ samples: all }) => {
+      if (!live) return;
+      const mine = all.filter((s) => s.kind === kind);
       setSamples(mine);
       if (isQ && mine[0]) {
-        api.previewQuestionnaire(mine[0].name).then(setPreview).catch(() => {});
+        api
+          .previewQuestionnaire(mine[0].name)
+          .then((p) => live && setCount(p.count))
+          .catch(() => {});
       }
     });
-    api.runs().then((r) => setRuns(r.runs.filter((x) => x.kind === kind)));
+    api.runs().then((r) => live && setRuns(r.runs.filter((x) => x.kind === kind)));
+    return () => {
+      live = false;
+    };
   }, [kind, isQ]);
 
-  async function start(sample: string) {
-    setBusy(true);
-    setError("");
-    try {
-      const run = isQ
-        ? await api.startQuestionnaire(sample, limit === "" ? undefined : Number(limit))
-        : await api.startGuide(sample);
-      onStarted(run.id);
-    } catch (e: any) {
-      setError(String(e.message ?? e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const parsedLimit = limit === "" ? undefined : Number(limit);
 
-  async function upload(file: File) {
-    setBusy(true);
-    setError("");
-    try {
-      const run = await api.upload(kind, file, limit === "" ? undefined : Number(limit));
-      onStarted(run.id);
-    } catch (e: any) {
-      setError(String(e.message ?? e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const start = useCallback(
+    async (sample: string) => {
+      setBusy(true);
+      setError("");
+      try {
+        const run = isQ
+          ? await api.startQuestionnaire(sample, parsedLimit)
+          : await api.startGuideLimited(sample, parsedLimit);
+        onStarted(run.id);
+      } catch (e: any) {
+        setError(String(e.message ?? e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [isQ, parsedLimit, onStarted],
+  );
+
+  const upload = useCallback(
+    async (file: File) => {
+      setBusy(true);
+      setError("");
+      try {
+        onStarted((await api.upload(kind, file, parsedLimit)).id);
+      } catch (e: any) {
+        setError(String(e.message ?? e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [kind, parsedLimit, onStarted],
+  );
 
   return (
-    <div className="stack" style={{ gap: 22, maxWidth: 900 }}>
-      <div className="stack" style={{ gap: 8 }}>
-        <div className="label">{isQ ? "Module 1" : "Module 2"}</div>
-        <h1>
-          {isQ
-            ? "Answer a Submission Review Form"
-            : "Pull the obligations out of a Policy Guide"}
+    <div className="flex max-w-3xl flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <span className="label-1">{isQ ? "Module 1" : "Module 2"}</span>
+        <h1 className="text-[34px] leading-tight">
+          {isQ ? "Answer a Submission Review Form" : "Pull the obligations out of a Policy Guide"}
         </h1>
-        <p className="muted" style={{ maxWidth: 660 }}>
+        <p className="max-w-2xl text-muted-foreground">
           {isQ ? (
             <>
-              Every question gets an answer, a quote from your own P&amp;Ps, and a page
-              number — each quote checked character-for-character against the source
-              document before you see it. Nothing is submitted for you.
+              Every question gets an answer, a quote from your own P&amp;Ps, and a page number —
+              each quote checked character-for-character against the source document before you
+              see it. Nothing is submitted for you.
             </>
           ) : (
             <>
-              The guide is read end to end and every concrete obligation is pulled out
-              with the sentence that creates it and its page. Each one is then checked
-              against your P&amp;P library, so you see what is already covered and what
-              needs writing before a questionnaire ever arrives.
+              The guide is read end to end and every concrete obligation is pulled out with the
+              sentence that creates it and its page. Each one is then checked against your P&amp;P
+              library, so you see what is already covered and what needs writing before a
+              questionnaire ever arrives.
             </>
           )}
         </p>
       </div>
 
-      {health && !health.llm_configured && (
-        <div className="banner alert">
-          <strong>No API key configured.</strong> Set <code>ANTHROPIC_API_KEY</code> in{" "}
-          <code>.env</code> and restart the server. The corpus browser works without it.
-        </div>
+      {health?.llm_configured === false && (
+        <Card className="gap-1 border-[#e0b39f] bg-brick-100 px-4 py-3 text-sm text-brick-700">
+          <strong>No API key configured.</strong>
+          <span>
+            Set <code className="font-mono">ANTHROPIC_API_KEY</code> in{" "}
+            <code className="font-mono">.env</code> and restart the server. Completed runs and
+            the policy library still work without it.
+          </span>
+        </Card>
       )}
 
-      {error && <div className="banner alert">{error}</div>}
+      {error && (
+        <Card className="border-[#e0b39f] bg-brick-100 px-4 py-3 text-sm text-brick-700">
+          {error}
+        </Card>
+      )}
 
-      <div className="card">
-        <div className="card-pad stack" style={{ gap: 14 }}>
-          <div className="label">Start from a bundled document</div>
-          {samples.length === 0 ? (
+      <Card className="gap-0 overflow-hidden p-0">
+        <div className="flex flex-col gap-3.5 p-5">
+          <span className="label-1">Start from a bundled document</span>
+          {!samples ? (
             <Spinner label="Looking for samples…" />
+          ) : samples.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No bundled document for this module.</p>
           ) : (
             samples.map((s) => (
-              <div key={s.name} className="spread">
-                <div className="stack" style={{ gap: 3 }}>
-                  <strong className="small">{s.name}</strong>
-                  <span className="tiny muted">
+              <div key={s.name} className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <strong className="text-sm">{s.name}</strong>
+                  <span className="text-xs text-muted-foreground">
                     {s.size_kb} KB
-                    {isQ && preview ? ` · ${preview.count} questions parsed` : ""}
+                    {isQ && count !== null ? ` · ${count} questions parsed` : ""}
                   </span>
                 </div>
-                <button
-                  className="btn"
-                  disabled={busy || (health ? !health.llm_configured : false)}
-                  onClick={() => start(s.name)}
-                >
-                  {busy ? "Starting…" : isQ ? "Answer all questions" : "Extract obligations"}
-                </button>
+                <Button disabled={disabled} onClick={() => start(s.name)}>
+                  <Play className="size-3.5" />
+                  {busy ? "Starting…" : isQ ? "Answer questions" : "Extract obligations"}
+                </Button>
               </div>
             ))
           )}
 
-          {isQ && (
-            <div className="hairline row wrap" style={{ paddingTop: 12, gap: 10 }}>
-              <span className="tiny muted">
-                A full 64-question pass takes a few minutes and costs a few dollars in
-                model calls. To try it quickly, cap the number of questions:
-              </span>
-              <input
-                className="input"
-                style={{ width: 92 }}
-                type="number"
-                min={1}
-                max={200}
-                placeholder="all"
-                value={limit}
-                onChange={(e) =>
-                  setLimit(e.target.value === "" ? "" : Number(e.target.value))
-                }
-              />
-            </div>
-          )}
+          <Separator />
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              type="number"
+              min={1}
+              max={500}
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              placeholder="all"
+              className="h-9 w-24"
+              aria-label={isQ ? "Question limit" : "Coverage-check limit"}
+            />
+            <p className="max-w-md text-xs text-muted-foreground">
+              {isQ ? (
+                <>
+                  A full 64-question pass takes about 13 minutes and a few dollars of model
+                  calls. Cap it to try the flow quickly.
+                </>
+              ) : (
+                <>
+                  Extraction always reads the whole guide. This caps how many obligations get
+                  coverage-checked against your P&amp;Ps — mandatory ones first.
+                </>
+              )}
+            </p>
+          </div>
         </div>
 
-        <div className="card-pad hairline spread">
-          <div className="stack" style={{ gap: 3 }}>
-            <strong className="small">Or upload your own PDF</strong>
-            <span className="tiny muted">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t p-5">
+          <div className="flex flex-col gap-0.5">
+            <strong className="text-sm">Or upload your own PDF</strong>
+            <span className="text-xs text-muted-foreground">
               {isQ
                 ? "Any DHCS Submission Review Form."
                 : "Any DHCS Policy Guide or All Plan Letter."}
             </span>
           </div>
-          <div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/pdf"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) upload(f);
-              }}
-            />
-            <button
-              className="btn secondary"
-              disabled={busy || (health ? !health.llm_configured : false)}
-              onClick={() => fileRef.current?.click()}
-            >
-              Choose PDF
-            </button>
-          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) upload(f);
+              e.target.value = "";
+            }}
+          />
+          <Button variant="secondary" disabled={disabled} onClick={() => fileRef.current?.click()}>
+            <FileUp className="size-3.5" /> Choose PDF
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {runs.length > 0 && (
-        <div className="card">
-          <div className="card-pad" style={{ paddingBottom: 8 }}>
-            <div className="label">Earlier runs</div>
+        <Card className="gap-0 overflow-hidden p-0">
+          <div className="px-5 pt-5">
+            <span className="label-1">Earlier runs</span>
           </div>
-          <table className="grid">
-            <tbody>
-              {runs.slice(0, 8).map((r) => (
-                <tr key={r.id} onClick={() => onOpen(r.id)}>
-                  <td>
-                    <div className="small truncate" style={{ maxWidth: 520 }}>
-                      {r.title}
-                    </div>
-                    <div className="tiny muted">
-                      {r.created_at.replace("T", " ").slice(0, 16)} · {r.source_name}
-                    </div>
-                  </td>
-                  <td style={{ width: 150 }}>
-                    <Chip
-                      tone={
-                        r.status === "done" ? "ok" : r.status === "error" ? "alert" : "info"
-                      }
-                    >
-                      {r.status === "running"
-                        ? `${r.completed}/${r.total}`
-                        : r.status}
-                    </Chip>
-                  </td>
-                  <td style={{ width: 60 }}>
-                    <button
-                      className="btn ghost small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        api.deleteRun(r.id).then(() =>
-                          setRuns((prev) => prev.filter((x) => x.id !== r.id)),
-                        );
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          <div className="mt-2 divide-y">
+            {runs.slice(0, 8).map((r) => (
+              <div
+                key={r.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpen(r.id)}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onOpen(r.id)}
+                className="flex cursor-pointer items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/60"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{r.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {r.created_at.replace("T", " ").slice(0, 16)} · {r.source_name}
+                  </p>
+                </div>
+                <Chip
+                  tone={r.status === "done" ? "ok" : r.status === "error" ? "alert" : "info"}
+                >
+                  {r.status === "running" ? `${r.completed}/${r.total}` : r.status}
+                </Chip>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 shrink-0"
+                  aria-label="Delete run"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    api
+                      .deleteRun(r.id)
+                      .then(() => setRuns((prev) => prev.filter((x) => x.id !== r.id)));
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
     </div>
   );

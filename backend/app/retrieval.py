@@ -238,6 +238,7 @@ def search_passages(
     phrasings: list[str],
     topics: list[str] | None = None,
     limit: int | None = None,
+    only_policies: list[str] | None = None,
 ) -> list[Passage]:
     """Two-stage retrieval: shortlist documents, then rank passages.
 
@@ -293,14 +294,49 @@ def search_passages(
 
         ordered = [
             cid for cid, _ in sorted(chunk_scores.items(), key=lambda kv: -kv[1])
-        ][:limit]
+        ]
+
+        # An analyst redirect ("look in GG.1550") is a hard filter, not a hint —
+        # if she names the policy she means it, so drop everything else. Falls
+        # back to the unfiltered ranking when the named policy has no match at
+        # all, since an empty result would look like a bug rather than an answer.
+        if only_policies:
+            wanted = {c.strip().upper() for c in only_policies if c.strip()}
+            rows = conn.execute(
+                f"""SELECT ch.id FROM chunks ch JOIN documents d ON d.id = ch.doc_id
+                    WHERE UPPER(d.policy_code) IN ({','.join('?' * len(wanted))})""",
+                list(wanted),
+            ).fetchall()
+            allowed = {r[0] for r in rows}
+            if allowed:
+                narrowed = [cid for cid in ordered if cid in allowed]
+                # Include unranked passages from the named policy so a redirect
+                # surfaces it even when the query terms never matched there.
+                narrowed += [cid for cid in allowed if cid not in chunk_scores][:limit]
+                if narrowed:
+                    ordered = narrowed
+
+        ordered = ordered[:limit]
         return _hydrate(conn, ordered, chunk_scores)
 
 
-async def retrieve(question: str) -> tuple[Expansion, list[Passage]]:
+async def retrieve(
+    question: str,
+    hint: str = "",
+    only_policies: list[str] | None = None,
+) -> tuple[Expansion, list[Passage]]:
+    """Expand the question into the plan's vocabulary, then search.
+
+    `hint` is free text from the analyst ("this is about post-service review").
+    It is appended to the search phrasings rather than replacing them, so her
+    steer adds recall without discarding what the expansion found.
+    """
     expansion = await expand_question(question)
+    phrasings = expansion.search_phrasings(question)
+    if hint.strip():
+        phrasings = [hint.strip(), *phrasings]
     passages = await asyncio.to_thread(
-        search_passages, expansion.search_phrasings(question), expansion.likely_topics
+        search_passages, phrasings, expansion.likely_topics, None, only_policies
     )
     return expansion, passages
 

@@ -63,6 +63,7 @@ export interface Result {
   contradictions: Contradiction[];
   discarded_quotes: { quote: string; reason: string; similarity?: number; cite?: string }[];
   error?: string;
+  steered?: { hint: string; policies: string[] };
   obligation?: string;
   plan_synonyms?: string[];
   regulator_terms?: string[];
@@ -93,6 +94,16 @@ export interface Item {
   quote_verified?: boolean;
   result: Result | null;
   review: Review;
+  /** Persisted follow-up exchanges, so the audit trail survives a refresh. */
+  thread?: ThreadEntry[];
+}
+
+export interface ThreadEntry {
+  question: string;
+  answer: string;
+  quotes: { quote: string; cite: string; policy_code: string; doc_id: number;
+            page_start: number; page_end: number }[];
+  changes_verdict: boolean;
 }
 
 export interface RunSummary {
@@ -207,6 +218,35 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ note: "", ...body }),
     }),
+
+  /* --- per-item interaction: the batch result is the opening move --- */
+
+  /** Scoped follow-up about one item's evidence. No re-retrieval. */
+  ask: (runId: string, key: string | number, question: string) =>
+    req<{ item: Item; answer: ThreadEntry }>(
+      `/api/runs/${runId}/items/${key}/ask`,
+      { method: "POST", body: JSON.stringify({ question }) },
+    ),
+
+  /** Re-answer one item, steered by a hint and/or specific policies. */
+  rerun: (runId: string, key: string | number, hint: string, policies: string[]) =>
+    req<Item>(`/api/runs/${runId}/items/${key}/rerun`, {
+      method: "POST",
+      body: JSON.stringify({ hint, policies }),
+    }),
+
+  /** Swap the citation to a passage she picked; still verified. */
+  setCitation: (runId: string, key: string | number, chunkId: number, quote = "") =>
+    req<Item>(`/api/runs/${runId}/items/${key}/citation`, {
+      method: "POST",
+      body: JSON.stringify({ chunk_id: chunkId, quote }),
+    }),
+
+  startGuideLimited: (sample: string, limit?: number) =>
+    req<Run>("/api/runs/guide", {
+      method: "POST",
+      body: JSON.stringify({ sample, limit }),
+    }),
 };
 
 /** SSE subscription for a live run. Returns an unsubscribe function. */
@@ -250,16 +290,4 @@ export const COVERAGE_LABEL: Record<Coverage, string> = {
   error: "Error",
 };
 
-export function statusTone(s?: Status | Coverage): "ok" | "warn" | "none" | "alert" {
-  switch (s) {
-    case "supported":
-    case "covered":
-      return "ok";
-    case "partial":
-      return "warn";
-    case "error":
-      return "alert";
-    default:
-      return "none";
-  }
-}
+

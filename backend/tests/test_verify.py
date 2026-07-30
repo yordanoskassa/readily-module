@@ -221,3 +221,64 @@ class TestFuzzyBoundary:
         check = verify_quote(SOURCE * 3, SOURCE)
         assert check.verified is False
         assert check.start == -1
+
+
+class TestAnalystSuppliedQuoteIsNeverSubstituted:
+    """When she types a quote she gets that quote, or an error — never a swap.
+
+    Silently replacing her wording with different real text from the passage
+    would hand her a citation she never chose while reporting success. That is
+    the same class of failure the verification layer exists to prevent, so it
+    gets its own guard.
+    """
+
+    @staticmethod
+    @pytest.fixture
+    def passage(monkeypatch):
+        """Stub the database lookup so this needs no index and no API key."""
+        from app import interact
+        from app.retrieval import Passage
+
+        stub = Passage(
+            chunk_id=1, doc_id=1, policy_code="GG.1503", title="Hospice Coverage",
+            program="GG", department="Medical Management", revised_date="09/01/2024",
+            page_start=2, page_end=2, heading="II. POLICY", text=SOURCE, n_pages=18,
+        )
+        monkeypatch.setattr(interact, "_passages_from_chunk_ids", lambda ids: [stub])
+        return stub
+
+    def test_fabricated_quote_raises_instead_of_substituting(self, passage):
+        import asyncio
+
+        from app.interact import QuoteNotInSource, set_citation
+
+        with pytest.raises(QuoteNotInSource) as excinfo:
+            asyncio.run(
+                set_citation(
+                    {"question": "Does the P&P state the terminal illness standard?"},
+                    chunk_id=1,
+                    quote="The MCP shall never disenroll any Member for any reason.",
+                )
+            )
+        # The error has to name the document and the closeness, so she can tell
+        # a typo apart from citing the wrong policy.
+        message = str(excinfo.value)
+        assert "GG.1503" in message
+        assert "%" in message
+
+    def test_genuine_quote_is_stored_exactly_as_supplied(self, passage):
+        import asyncio
+
+        from app.interact import set_citation
+
+        citation = asyncio.run(
+            set_citation(
+                {"question": "Does the P&P state the terminal illness standard?"},
+                chunk_id=1,
+                quote="life expectancy is six (6) months or less",
+            )
+        )
+        assert citation is not None
+        assert citation["quote"] == "life expectancy is six (6) months or less"
+        assert citation["quote_check"]["verified"] is True
+        assert citation["cite"] == "GG.1503 p. 2"

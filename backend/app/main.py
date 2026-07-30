@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import interact
 from . import runs as runs_mod
 from .config import get_settings
 from .db import init_db, session
@@ -267,6 +268,94 @@ class ReviewBody(BaseModel):
     state: str          # accepted | flagged | edited | open
     note: str = ""
     citation_override: dict | None = None
+
+
+def _find_item(run_id: str, key: str):
+    """Locate one item and its containing run, or raise 404."""
+    run = runs_mod.STORE.load(run_id)
+    if not run:
+        raise HTTPException(404, "run not found")
+    for item in run.items:
+        if str(item.get("number", item.get("id"))) == str(key):
+            return run, item
+    raise HTTPException(404, "item not found")
+
+
+class AskBody(BaseModel):
+    question: str
+
+
+@app.post("/api/runs/{run_id}/items/{key}/ask")
+async def ask_item(run_id: str, key: str, body: AskBody) -> dict:
+    """A scoped follow-up about one item's evidence. No re-retrieval."""
+    if not body.question.strip():
+        raise HTTPException(400, "question is required")
+    run, item = _find_item(run_id, key)
+    answer = await interact.ask(item, body.question.strip())
+    # Kept on the item so the exchange is part of the audit trail, not a
+    # transient chat that disappears on refresh.
+    item.setdefault("thread", []).append(
+        {"question": body.question.strip(), **answer}
+    )
+    runs_mod.STORE.save(run)
+    runs_mod.STORE.publish(run_id, {"type": "review", "item": item})
+    return {"item": item, "answer": answer}
+
+
+class RerunBody(BaseModel):
+    hint: str = ""
+    policies: list[str] = []
+
+
+@app.post("/api/runs/{run_id}/items/{key}/rerun")
+async def rerun_item(run_id: str, key: str, body: RerunBody) -> dict:
+    """Re-answer one item with the analyst's steer."""
+    run, item = _find_item(run_id, key)
+    result = await interact.rerun(item, body.hint.strip(), body.policies)
+    item["result"] = result
+    # A steered re-run is a new answer, so any prior decision no longer applies.
+    if item.get("review", {}).get("state") in ("accepted", "edited"):
+        item["review"] = {"state": "open", "note": item["review"].get("note", ""),
+                          "updated_at": runs_mod._now()}
+    runs_mod.STORE.save(run)
+    runs_mod.STORE.publish(run_id, {"type": "item", "item": item})
+    return item
+
+
+class CiteBody(BaseModel):
+    chunk_id: int
+    quote: str = ""
+
+
+@app.post("/api/runs/{run_id}/items/{key}/citation")
+async def set_item_citation(run_id: str, key: str, body: CiteBody) -> dict:
+    """Swap the citation to a passage the analyst picked."""
+    run, item = _find_item(run_id, key)
+    try:
+        citation = await interact.set_citation(item, body.chunk_id, body.quote)
+    except interact.QuoteNotInSource as exc:
+        # Her own wording failed the verbatim check. Say so rather than
+        # substituting a different quote and reporting success.
+        raise HTTPException(422, str(exc)) from exc
+    if citation is None:
+        raise HTTPException(
+            422,
+            "Could not verify a quote from that passage against the source "
+            "document, so it was not applied.",
+        )
+    result = item.get("result") or {}
+    result["citations"] = [citation]
+    # Her chosen citation is evidence, so the verdict is at least partial.
+    if result.get("status") in (None, "not_found", "error"):
+        result["status"] = "partial"
+    if "coverage_status" in result and result["coverage_status"] in ("gap", "error"):
+        result["coverage_status"] = "partial"
+    item["result"] = result
+    item["review"] = {"state": "edited", "note": item.get("review", {}).get("note", ""),
+                      "updated_at": runs_mod._now()}
+    runs_mod.STORE.save(run)
+    runs_mod.STORE.publish(run_id, {"type": "item", "item": item})
+    return item
 
 
 @app.post("/api/runs/{run_id}/items/{key}/review")
