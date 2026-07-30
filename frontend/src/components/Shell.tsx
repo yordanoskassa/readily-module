@@ -1,12 +1,11 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
+  ChevronLeft,
   ChevronRight,
-  ChevronsRight,
   CircleHelp,
   ClipboardCheck,
   FileText,
-  PanelLeftClose,
   RefreshCcw,
   Search,
 } from "lucide-react";
@@ -114,43 +113,18 @@ export function Shell({
         <div className={cn("border-b", collapsed ? "px-2" : "px-3")}>
           {/* Rule between the two identities: Readily is the product, the block
               below is the tenant. Stacked without it they read as one lockup. */}
-          {collapsed ? (
-            <div className="flex flex-col items-center gap-1.5 border-b py-3">
+          <div
+            className={cn(
+              "flex items-center border-b py-3",
+              collapsed ? "justify-center" : "",
+            )}
+          >
+            {collapsed ? (
               <LogoMark className="size-6 text-obsidian" />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => setCollapsed(false)}
-                    aria-expanded={false}
-                    aria-label="Expand sidebar"
-                    className="grid size-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
-                  >
-                    <ChevronsRight className="size-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Expand sidebar</TooltipContent>
-              </Tooltip>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-2 border-b py-3">
+            ) : (
               <Logo className="h-6 shrink-0 text-obsidian" />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => setCollapsed(true)}
-                    aria-expanded
-                    aria-label="Collapse sidebar"
-                    className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
-                  >
-                    <PanelLeftClose className="size-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Collapse sidebar</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Stands in for the org switcher a real deployment provides. */}
           <div className={cn("py-3", collapsed && "flex justify-center")}>
@@ -234,6 +208,33 @@ export function Shell({
               </span>
             </button>
           )}
+        </div>
+        <div className={cn("shrink-0 border-t py-2", collapsed ? "px-2" : "px-3")}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => setCollapsed((v) => !v)}
+                aria-expanded={!collapsed}
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                className={cn(
+                  "flex w-full items-center rounded-md text-[12.5px] text-muted-foreground",
+                  "transition-colors hover:bg-white hover:text-foreground",
+                  collapsed ? "justify-center py-2" : "gap-2 px-2 py-1.5",
+                )}
+              >
+                {collapsed ? (
+                  <ChevronRight className="size-4" />
+                ) : (
+                  <>
+                    <ChevronLeft className="size-4 shrink-0" />
+                    <span>Collapse</span>
+                  </>
+                )}
+              </button>
+            </TooltipTrigger>
+            {collapsed && <TooltipContent side="right">Expand sidebar</TooltipContent>}
+          </Tooltip>
         </div>
       </aside>
 
