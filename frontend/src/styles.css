@@ -4,8 +4,20 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------------------
-   Readily brand fonts. PP Fragment is self-hosted from their site; Special
-   Gothic is the body face they load from jsDelivr.
+   Design tokens lifted from Readily's actual product stylesheet
+   (app.readily.co/assets/index-*.css) rather than the marketing site.
+
+   The two differ in ways that matter:
+     - the app runs on system sans, not the marketing faces. PP Fragment is
+       kept for display headings only, which is where the app uses it too.
+     - surfaces are warm off-white (#faf8f5 / #f7f6f4), not pure white on grey.
+     - radii are 4 / 8 / 12 with pill chips, and elevation is real: every
+       raised surface carries a shadow.
+     - text greys come from the slate ramp, while brand accents stay warm.
+
+   Their audit-status tokens (met / partially-met / not-met / needs-docs / n-a)
+   map one-to-one onto this module's verdicts, so the status colours here are
+   theirs verbatim instead of something invented.
    --------------------------------------------------------------------------- */
 
 @font-face {
@@ -22,143 +34,156 @@
   font-style: normal;
   font-display: swap;
 }
-@font-face {
-  font-family: "Special Gothic";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 400 700;
-  src: url("https://cdn.jsdelivr.net/fontsource/fonts/special-gothic:vf@latest/latin-wght-normal.woff2")
-    format("woff2-variations");
-}
-
-/* ---------------------------------------------------------------------------
-   Readily's palette, taken from their stylesheet, mapped onto shadcn tokens.
-
-   `primary` is obsidian rather than the meadow green on purpose: meadow already
-   carries meaning in this product (a supported citation), and reusing it for
-   every button would blur the status system. Obsidian also matches Readily's
-   own buttons, which are solid dark with cloud text.
-   --------------------------------------------------------------------------- */
 
 :root {
-  /* brand scales */
-  --cloud: #ffffff;
-  --obsidian: #030303;
-  --dust: #e9e5e0;
-  --breeze: #bcf6ff;
-  --mint: #8eeba5;
+  /* -- brand ------------------------------------------------------------- */
+  --brand-obsidian: #030303;
+  --brand-meadow: #34a382;
+  --brand-mint: #8eeba5;
+  --brand-sky: #29cae6;
+  --brand-breeze: #bcf6ff;
+  --brand-pollen: #ffe27f;
+  --brand-dust: #e9e5e0;
+  --brand-stone: #bcb4ab;
 
-  --meadow: #34a382;
-  --meadow-100: #c6f4d2;
-  --meadow-200: #8eeba5;
-  --meadow-300: #5fd98a;
-  --meadow-600: #2a8a6e;
-  --meadow-700: #1c5c48;
+  /* -- design-system neutrals -------------------------------------------- */
+  --ds-neutral-900: #030303;
+  --ds-neutral-800: #232323;
+  --ds-neutral-700: #626262;
+  --ds-neutral-500: #818181;
+  --ds-neutral-400: #a1a1a1;
+  --ds-neutral-200: #e0e0e0;
+  --ds-neutral-100: #f5f5f5;
 
-  --pollen: #ffe27f;
-  --pollen-100: #fff3c6;
-  --pollen-200: #ffe27f;
-  --pollen-500: #d29c12;
-  --pollen-700: #7a5a06;
+  --ds-warm-200: #faf8f5;
+  --ds-warm-300: #f7f6f4;
+  --ds-warm-350: #f3efea;
+  --ds-warm-400: #f0eeea;
+  --ds-warm-500: #e9e5e0;
+  --ds-warm-600: #dedad5;
+  --ds-warm-800: #c4bdb5;
 
-  --sky: #29cae6;
-  --sky-100: #cff7ff;
-  --sky-400: #54d5ef;
-  --sky-600: #14a6c2;
-  --sky-700: #0b6a7d;
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-900: #0f172a;
 
-  --stone-200: #e9e5e0;
-  --stone-300: #d5cfc7;
-  --stone-400: #bcb4ab;
-  --stone-500: #9b948b;
-  --stone-600: #79736b;
-  --stone-700: #58534d;
-  --stone-800: #3a3733;
+  /* -- semantic ---------------------------------------------------------- */
+  --ds-success: #34a382;
+  --ds-info: #29cae6;
+  --ds-warning: #ffe27f;
+  --ds-destructive: #d1553f;
 
-  --brick: #b4451f;
-  --brick-100: #f7e2d8;
-  --brick-700: #8a3517;
+  /* audit statuses, verbatim from their product */
+  --status-met-fg: #166534;
+  --status-met-bg: #dcfce7;
+  --status-met-border: #bbf7d0;
+  --status-met-dot: #16a34a;
 
-  /* shadcn tokens */
-  --radius: 0.625rem;
+  --status-partial-fg: #854d0e;
+  --status-partial-bg: #fef3c7;
+  --status-partial-border: #fde68a;
+  --status-partial-dot: #d97706;
 
-  --background: #f6f4f1;
-  --foreground: var(--obsidian);
+  --status-not-met-fg: #94131f;
+  --status-not-met-bg: #ffdde0;
+  --status-not-met-border: #ffc2c4;
+  --status-not-met-dot: #ef4444;
 
-  --card: var(--cloud);
-  --card-foreground: var(--obsidian);
-  --popover: var(--cloud);
-  --popover-foreground: var(--obsidian);
+  --status-needs-docs-fg: #9a3412;
+  --status-needs-docs-bg: #ffedd5;
+  --status-needs-docs-border: #fed7aa;
+  --status-needs-docs-dot: #f97316;
 
-  --primary: var(--obsidian);
-  --primary-foreground: var(--cloud);
+  --status-na-fg: var(--slate-600);
+  --status-na-bg: var(--slate-50);
+  --status-na-border: var(--slate-200);
+  --status-na-dot: var(--slate-400);
 
-  --secondary: var(--dust);
-  --secondary-foreground: var(--stone-800);
+  --status-info-fg: #0a6f80;
+  --status-info-bg: #d8f5fb;
+  --status-info-border: #bcf6ff;
+  --status-info-dot: var(--ds-info);
 
-  --muted: #f1eeea;
-  --muted-foreground: var(--stone-600);
+  --score-pass: #16a34a;
+  --score-warn: #a16207;
+  --score-fail: #dc2626;
 
-  --accent: var(--meadow-100);
-  --accent-foreground: var(--meadow-700);
+  /* -- shadcn surface tokens --------------------------------------------- */
+  --radius: 0.5rem;
 
-  --destructive: var(--brick);
-  --destructive-foreground: var(--cloud);
+  --background: var(--ds-warm-300);
+  --foreground: var(--slate-900);
 
-  --border: var(--stone-300);
-  --input: var(--stone-300);
-  --ring: var(--sky-600);
+  --card: #ffffff;
+  --card-foreground: var(--slate-900);
+  --popover: #ffffff;
+  --popover-foreground: var(--slate-900);
 
-  /* categorical series, brand-ordered */
-  --chart-1: var(--meadow);
-  --chart-2: var(--sky-600);
-  --chart-3: var(--pollen-500);
-  --chart-4: var(--stone-500);
-  --chart-5: var(--brick);
+  --primary: var(--brand-obsidian);
+  --primary-foreground: #ffffff;
 
-  --sidebar: var(--cloud);
-  --sidebar-foreground: var(--obsidian);
-  --sidebar-primary: var(--obsidian);
-  --sidebar-primary-foreground: var(--cloud);
-  --sidebar-accent: var(--dust);
-  --sidebar-accent-foreground: var(--stone-800);
-  --sidebar-border: var(--stone-300);
-  --sidebar-ring: var(--sky-600);
+  --secondary: var(--ds-warm-400);
+  --secondary-foreground: var(--ds-neutral-800);
+
+  --muted: var(--ds-warm-350);
+  --muted-foreground: var(--slate-500);
+
+  --accent: var(--ds-warm-400);
+  --accent-foreground: var(--ds-neutral-800);
+
+  --destructive: var(--ds-destructive);
+  --destructive-foreground: #ffffff;
+
+  --border: var(--slate-200);
+  --input: var(--slate-200);
+  --ring: var(--slate-400);
+
+  --chart-1: var(--brand-meadow);
+  --chart-2: var(--ds-info);
+  --chart-3: #d97706;
+  --chart-4: var(--slate-400);
+  --chart-5: var(--ds-destructive);
+
+  /* -- motion ------------------------------------------------------------ */
+  --motion-xfast: 0.12s;
+  --motion-fast: 0.18s;
+  --motion-base: 0.26s;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decel: cubic-bezier(0.05, 0.7, 0.1, 1);
+
 }
 
 .dark {
-  --background: #1a1816;
-  --foreground: #f2efec;
-  --card: #241f1c;
-  --card-foreground: #f2efec;
-  --popover: #241f1c;
-  --popover-foreground: #f2efec;
-  --primary: #f2efec;
-  --primary-foreground: #1a1816;
-  --secondary: #322c28;
-  --secondary-foreground: #f2efec;
-  --muted: #322c28;
-  --muted-foreground: var(--stone-400);
-  --accent: #1c4a3c;
-  --accent-foreground: var(--meadow-200);
-  --destructive: #d4643c;
-  --destructive-foreground: #1a1816;
-  --border: #3a332e;
-  --input: #3a332e;
-  --ring: var(--sky-400);
-  --sidebar: #241f1c;
-  --sidebar-foreground: #f2efec;
-  --sidebar-primary: #f2efec;
-  --sidebar-primary-foreground: #1a1816;
-  --sidebar-accent: #322c28;
-  --sidebar-accent-foreground: #f2efec;
-  --sidebar-border: #3a332e;
-  --sidebar-ring: var(--sky-400);
+  --background: #17181a;
+  --foreground: #eef1f5;
+  --card: #1e2023;
+  --card-foreground: #eef1f5;
+  --popover: #1e2023;
+  --popover-foreground: #eef1f5;
+  --primary: #eef1f5;
+  --primary-foreground: #17181a;
+  --secondary: #2a2d31;
+  --secondary-foreground: #eef1f5;
+  --muted: #2a2d31;
+  --muted-foreground: var(--slate-400);
+  --accent: #2a2d31;
+  --accent-foreground: #eef1f5;
+  --border: #33373c;
+  --input: #33373c;
+  --ring: var(--slate-500);
 }
 
 @theme inline {
-  --font-sans: "Special Gothic", Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "PP Fragment", Fraunces, Georgia, serif;
+  /* The product runs on system sans; PP Fragment is display only. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: "PP Fragment", Georgia, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --color-background: var(--background);
@@ -185,54 +210,38 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 
-  /* brand colours available as utilities: bg-meadow, text-pollen-700, … */
-  --color-cloud: var(--cloud);
-  --color-obsidian: var(--obsidian);
-  --color-dust: var(--dust);
-  --color-breeze: var(--breeze);
-  --color-mint: var(--mint);
-  --color-meadow: var(--meadow);
-  --color-meadow-100: var(--meadow-100);
-  --color-meadow-200: var(--meadow-200);
-  --color-meadow-300: var(--meadow-300);
-  --color-meadow-600: var(--meadow-600);
-  --color-meadow-700: var(--meadow-700);
-  --color-pollen: var(--pollen);
-  --color-pollen-100: var(--pollen-100);
-  --color-pollen-200: var(--pollen-200);
-  --color-pollen-500: var(--pollen-500);
-  --color-pollen-700: var(--pollen-700);
-  --color-sky: var(--sky);
-  --color-sky-100: var(--sky-100);
-  --color-sky-400: var(--sky-400);
-  --color-sky-600: var(--sky-600);
-  --color-sky-700: var(--sky-700);
-  --color-stone-200: var(--stone-200);
-  --color-stone-300: var(--stone-300);
-  --color-stone-400: var(--stone-400);
-  --color-stone-500: var(--stone-500);
-  --color-stone-600: var(--stone-600);
-  --color-stone-700: var(--stone-700);
-  --color-stone-800: var(--stone-800);
-  --color-brick: var(--brick);
-  --color-brick-100: var(--brick-100);
-  --color-brick-700: var(--brick-700);
+  /* brand + ds ramps as utilities */
+  --color-obsidian: var(--brand-obsidian);
+  --color-meadow: var(--brand-meadow);
+  --color-mint: var(--brand-mint);
+  --color-sky: var(--brand-sky);
+  --color-breeze: var(--brand-breeze);
+  --color-pollen: var(--brand-pollen);
+  --color-dust: var(--brand-dust);
+  --color-warm-200: var(--ds-warm-200);
+  --color-warm-300: var(--ds-warm-300);
+  --color-warm-400: var(--ds-warm-400);
+  --color-warm-500: var(--ds-warm-500);
+  --color-warm-600: var(--ds-warm-600);
+  --color-slate-50: var(--slate-50);
+  --color-slate-200: var(--slate-200);
+  --color-slate-400: var(--slate-400);
+  --color-slate-500: var(--slate-500);
+  --color-slate-600: var(--slate-600);
+  --color-slate-700: var(--slate-700);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-score-pass: var(--score-pass);
+  --color-score-warn: var(--score-warn);
+  --color-score-fail: var(--score-fail);
 
-  --ease-brand: cubic-bezier(0.6, 0, 0, 1);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --ease-standard: var(--ease-standard);
+  --ease-decel: var(--ease-decel);
 }
 
 @layer base {
@@ -245,26 +254,113 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
+    font-size: 14px;
   }
   h1,
   h2,
   h3 {
-    @apply font-serif font-light tracking-[-0.01em];
+    @apply font-display font-light tracking-[-0.015em];
   }
   ::selection {
-    background: var(--breeze);
+    background: var(--brand-breeze);
   }
 }
 
 @layer components {
-  /* Readily's uppercase micro-label, used for field and column headings. */
+  /* Uppercase micro-label used for field and column headings. */
   .label-1 {
-    @apply text-[11px] uppercase tracking-[0.06em] leading-[1.3] text-muted-foreground;
+    @apply text-[11px] font-medium uppercase tracking-[0.05em] leading-[1.3]
+           text-muted-foreground;
   }
-  /* Quoted policy text. Monospaced so whitespace is legible — these quotes are
-     checked character-for-character, so the reader should see them as-written. */
+
+  /* Status pill, matching the product's own chip: pill radius, 12px medium,
+     3px/9px padding, and a 6px dot carrying the status colour. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .pill > .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .pill-met {
+    color: var(--status-met-fg);
+    background: var(--status-met-bg);
+    border-color: var(--status-met-border);
+  }
+  .pill-met > .dot { background: var(--status-met-dot); }
+
+  .pill-partial {
+    color: var(--status-partial-fg);
+    background: var(--status-partial-bg);
+    border-color: var(--status-partial-border);
+  }
+  .pill-partial > .dot { background: var(--status-partial-dot); }
+
+  .pill-not-met {
+    color: var(--status-not-met-fg);
+    background: var(--status-not-met-bg);
+    border-color: var(--status-not-met-border);
+  }
+  .pill-not-met > .dot { background: var(--status-not-met-dot); }
+
+  .pill-needs-docs {
+    color: var(--status-needs-docs-fg);
+    background: var(--status-needs-docs-bg);
+    border-color: var(--status-needs-docs-border);
+  }
+  .pill-needs-docs > .dot { background: var(--status-needs-docs-dot); }
+
+  .pill-na {
+    color: var(--status-na-fg);
+    background: var(--status-na-bg);
+    border-color: var(--status-na-border);
+  }
+  .pill-na > .dot { background: var(--status-na-dot); }
+
+  .pill-info {
+    color: var(--status-info-fg);
+    background: var(--status-info-bg);
+    border-color: var(--status-info-border);
+  }
+  .pill-info > .dot { background: var(--status-info-dot); }
+
+  /* Quoted policy text. Monospaced so the reader sees it exactly as written —
+     these strings are checked character-for-character. */
   .quote-block {
     @apply font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap
-           break-words rounded-md border-l-2 bg-muted/60 px-3.5 py-3;
+           break-words rounded-md border border-l-2 bg-white px-3.5 py-3;
+  }
+}
+
+@layer components {
+  .banner {
+    @apply rounded-md border px-3.5 py-2.5 text-[13px] leading-relaxed;
+  }
+  .banner-warn {
+    color: var(--status-partial-fg);
+    background: var(--status-partial-bg);
+    border-color: var(--status-partial-border);
+  }
+  .banner-danger {
+    color: var(--status-not-met-fg);
+    background: var(--status-not-met-bg);
+    border-color: var(--status-not-met-border);
+  }
+  .banner-info {
+    color: var(--status-info-fg);
+    background: var(--status-info-bg);
+    border-color: var(--status-info-border);
   }
 }

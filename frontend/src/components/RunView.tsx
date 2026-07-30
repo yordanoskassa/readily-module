@@ -210,8 +210,8 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
     ...((isGuide && (run.extracted ?? 0) > run.total
       ? [["Coverage checked", run.total, ""]]
       : []) as [string, number, string][]),
-    [isGuide ? "Covered" : "Supported", counts.supported, "text-meadow-600"],
-    ["Partial", counts.partial, "text-pollen-500"],
+    [isGuide ? "Covered" : "Supported", counts.supported, "text-score-pass"],
+    ["Partial", counts.partial, "text-score-warn"],
     [isGuide ? "Gaps" : "Not found", counts.not_found, ""],
     ["Conflicts", conflicts, ""],
     ["Accepted", accepted, ""],
@@ -258,7 +258,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
           <div className="flex flex-col gap-1.5">
             <Progress
               value={pct}
-              className="h-1 bg-dust [&>[data-slot=progress-indicator]]:bg-obsidian"
+              className="h-1 bg-warm-500 [&>[data-slot=progress-indicator]]:bg-obsidian"
             />
             <span className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
@@ -268,9 +268,9 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
           </div>
         )}
         {run.status === "error" && run.error && (
-          <Card className="border-[#e0b39f] bg-brick-100 px-4 py-2.5 text-sm text-brick-700">
+          <div className="banner banner-danger">
             {run.error}
-          </Card>
+          </div>
         )}
       </div>
 
@@ -302,7 +302,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
       {/* ------------------------------------------------ table + panel */}
       <Card
         className={`overflow-hidden p-0 ${
-          selectedItem ? "grid grid-cols-1 items-start lg:grid-cols-[minmax(0,1fr)_460px]" : ""
+ selectedItem ? "grid grid-cols-1 items-start lg:grid-cols-[minmax(0,1fr)_460px]" : ""
         }`}
       >
         <div className="min-w-0">
@@ -349,7 +349,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
                         {isGuide ? it.obligation : it.question}
                       </p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                        {isGuide && it.strength === "must" && <Chip tone="alert">must</Chip>}
+                        {isGuide && it.strength === "must" && <Chip tone="not-met">must</Chip>}
                         {isGuide && it.page ? (
                           <span className="font-mono text-[11px] text-muted-foreground">
                             guide p. {it.page}
@@ -357,7 +357,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
                         ) : null}
                         {(r?.contradictions?.length ?? 0) > 0 && (
                           <Chip
-                            tone="warn"
+                            tone="partial"
                             title="Conflicting language elsewhere in the same policy"
                           >
                             <AlertTriangle className="size-3" />
@@ -396,7 +396,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
                       {first ? (
                         <div className="flex flex-col gap-1">
                           <span className="font-mono text-[11px]">{first.cite}</span>
-                          {!first.quote_check.verified && <Chip tone="alert">unverified</Chip>}
+                          {!first.quote_check.verified && <Chip tone="not-met">unverified</Chip>}
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
@@ -408,9 +408,9 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
                         <Chip
                           tone={
                             it.review.state === "accepted"
-                              ? "ok"
+                              ? "met"
                               : it.review.state === "flagged"
-                                ? "warn"
+                                ? "partial"
                                 : "info"
                           }
                         >

@@ -114,20 +114,20 @@ export function Launcher({
       </div>
 
       {health?.llm_configured === false && (
-        <Card className="gap-1 border-[#e0b39f] bg-brick-100 px-4 py-3 text-sm text-brick-700">
+        <div className="banner banner-danger flex flex-col gap-1">
           <strong>No API key configured.</strong>
           <span>
             Set <code className="font-mono">ANTHROPIC_API_KEY</code> in{" "}
             <code className="font-mono">.env</code> and restart the server. Completed runs and
             the policy library still work without it.
           </span>
-        </Card>
+        </div>
       )}
 
       {error && (
-        <Card className="border-[#e0b39f] bg-brick-100 px-4 py-3 text-sm text-brick-700">
+        <div className="banner banner-danger">
           {error}
-        </Card>
+        </div>
       )}
 
       <Card className="gap-0 overflow-hidden p-0">
@@ -231,7 +231,7 @@ export function Launcher({
                   </p>
                 </div>
                 <Chip
-                  tone={r.status === "done" ? "ok" : r.status === "error" ? "alert" : "info"}
+                  tone={r.status === "done" ? "met" : r.status === "error" ? "not-met" : "info"}
                 >
                   {r.status === "running" ? `${r.completed}/${r.total}` : r.status}
                 </Chip>

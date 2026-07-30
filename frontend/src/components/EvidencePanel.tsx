@@ -87,7 +87,7 @@ function CitationBlock({ citation }: { citation: Citation }) {
         </Button>
       </div>
       <p className="mb-1.5 text-xs text-muted-foreground">{citation.title}</p>
-      <Quote tone={qc.verified ? "ok" : "alert"}>{citation.quote}</Quote>
+      <Quote tone={qc.verified ? "met" : "not-met"}>{citation.quote}</Quote>
       {citation.covers && (
         <p className="mt-1.5 text-xs text-muted-foreground">Establishes: {citation.covers}</p>
       )}
@@ -211,7 +211,7 @@ export function EvidencePanel({
           <div className="flex flex-wrap gap-1.5">
             {item.reference && <Chip>{item.reference}</Chip>}
             {isGuide && item.strength && (
-              <Chip tone={item.strength === "must" ? "alert" : "plain"}>{item.strength}</Chip>
+              <Chip tone={item.strength === "must" ? "not-met" : "na"}>{item.strength}</Chip>
             )}
             {isGuide && item.page ? <Chip>Guide p. {item.page}</Chip> : null}
             {item.deadline && <Chip tone="info">{item.deadline}</Chip>}
@@ -221,7 +221,7 @@ export function EvidencePanel({
 
         {isGuide && item.quote && (
           <Field label="Source text in the guide">
-            <Quote tone={item.quote_verified ? "ok" : "alert"}>{item.quote}</Quote>
+            <Quote tone={item.quote_verified ? "met" : "not-met"}>{item.quote}</Quote>
             {!item.quote_verified && (
               <p className="mt-1 text-xs text-muted-foreground">
                 Could not confirm this sentence on the page it was attributed to.
@@ -231,19 +231,19 @@ export function EvidencePanel({
         )}
 
         {!result && (
-          <Card className="border-pollen-200 bg-pollen-100 px-4 py-3 text-sm text-pollen-700">
+          <div className="banner banner-warn">
             {run.status === "running" ? "Still working through this one." : "Not checked yet."}
-          </Card>
+          </div>
         )}
 
         {result?.status === "error" && (
-          <Card className="gap-1 border-[#e0b39f] bg-brick-100 px-4 py-3 text-sm text-brick-700">
+          <div className="banner banner-danger flex flex-col gap-1">
             <strong>This question was not answered.</strong>
             <span>{result.error || result.reasoning}</span>
             <span className="text-xs">
               Treat it as unanswered, not as a compliance gap — re-run it below.
             </span>
-          </Card>
+          </div>
         )}
 
         {result && result.status !== "error" && (
@@ -290,17 +290,17 @@ export function EvidencePanel({
 
             {result.gap && (
               <Field label={isGuide ? "What is missing" : "Gap"}>
-                <Card className="border-pollen-200 bg-pollen-100 px-3.5 py-2.5 text-sm text-pollen-700">
+                <div className="banner banner-warn">
                   {result.gap}
-                </Card>
+                </div>
               </Field>
             )}
 
             {result.reviewer_note && (
               <Field label="Check this yourself">
-                <Card className="border-pollen-200 bg-pollen-100 px-3.5 py-2.5 text-sm text-pollen-700">
+                <div className="banner banner-warn">
                   {result.reviewer_note}
-                </Card>
+                </div>
               </Field>
             )}
 
@@ -310,13 +310,13 @@ export function EvidencePanel({
                   {result.contradictions.map((c, i) => (
                     <Card key={i} className="gap-2 p-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Chip tone={c.severity === "high" ? "alert" : "warn"}>
+                        <Chip tone={c.severity === "high" ? "not-met" : "partial"}>
                           <AlertTriangle className="size-3" />
                           {KIND_LABEL[c.kind] ?? c.kind}
                         </Chip>
                         <span className="font-mono text-[11px]">{c.cite}</span>
                       </div>
-                      <Quote tone="warn">{c.quote}</Quote>
+                      <Quote tone="partial">{c.quote}</Quote>
                       <p className="text-xs">{c.explanation}</p>
                     </Card>
                   ))}
@@ -379,7 +379,7 @@ export function EvidencePanel({
                     </div>
                   ))}
                   {t.changes_verdict && (
-                    <Chip tone="alert">
+                    <Chip tone="not-met">
                       <AlertTriangle className="size-3" /> Suggests the verdict is wrong
                     </Chip>
                   )}
@@ -390,9 +390,9 @@ export function EvidencePanel({
         )}
 
         {actionError && (
-          <Card className="border-[#e0b39f] bg-brick-100 px-3.5 py-2.5 text-sm text-brick-700">
+          <div className="banner banner-danger">
             {actionError}
-          </Card>
+          </div>
         )}
 
         {/* ---------------- ask ---------------- */}

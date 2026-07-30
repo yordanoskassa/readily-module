@@ -1,47 +1,34 @@
 import type { ReactNode } from "react";
 import { Check, Loader2, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Coverage, Status } from "@/lib/api";
 
-type Tone = "ok" | "warn" | "none" | "alert" | "info" | "plain";
-
-/** Status colours come from Readily's palette rather than generic red/green:
- *  meadow = supported, pollen = needs a look, stone = absent, brick = error. */
-const TONE: Record<Tone, string> = {
-  ok: "bg-meadow-100 text-meadow-700 border-meadow-300",
-  warn: "bg-pollen-100 text-pollen-700 border-pollen-200",
-  none: "bg-stone-200 text-stone-800 border-stone-300",
-  alert: "bg-brick-100 text-brick-700 border-[#e0b39f]",
-  info: "bg-sky-100 text-sky-700 border-sky-400",
-  plain: "bg-card text-stone-700 border-border",
-};
+/** Readily's product uses explicit audit-status tokens — met, partially met,
+ *  not met, needs docs, n/a — so this module's verdicts map onto those rather
+ *  than onto a generic red/amber/green of its own. */
+export type Tone = "met" | "partial" | "not-met" | "needs-docs" | "na" | "info";
 
 export function Chip({
-  tone = "plain",
+  tone = "na",
+  dot = false,
   children,
   className,
   title,
 }: {
   tone?: Tone;
+  /** Status pills carry the 6px dot; plain metadata chips do not. */
+  dot?: boolean;
   children: ReactNode;
   className?: string;
   title?: string;
 }) {
   return (
-    <Badge
-      variant="outline"
-      title={title}
-      className={cn(
-        "rounded-full px-2 py-0 text-[10.5px] font-normal uppercase tracking-[0.04em]",
-        TONE[tone],
-        className,
-      )}
-    >
+    <span title={title} className={cn("pill", `pill-${tone}`, className)}>
+      {dot && <span className="dot" />}
       {children}
-    </Badge>
+    </span>
   );
 }
 
@@ -49,13 +36,16 @@ export function statusTone(s?: Status | Coverage): Tone {
   switch (s) {
     case "supported":
     case "covered":
-      return "ok";
+      return "met";
     case "partial":
-      return "warn";
+      return "partial";
+    case "not_found":
+    case "gap":
+      return "not-met";
     case "error":
-      return "alert";
+      return "needs-docs";
     default:
-      return "none";
+      return "na";
   }
 }
 
@@ -66,21 +56,25 @@ export function StatusChip({
   status?: Status | Coverage;
   label: string;
 }) {
-  return <Chip tone={statusTone(status)}>{label}</Chip>;
+  return (
+    <Chip tone={statusTone(status)} dot>
+      {label}
+    </Chip>
+  );
 }
 
 /** Confidence as a bar plus the number. A bare number reads as more precise
  *  than the underlying judgement actually is. */
 export function Confidence({ value }: { value: number }) {
-  const tone =
+  const fill =
     value >= 70
-      ? "[&>[data-slot=progress-indicator]]:bg-meadow"
+      ? "[&>[data-slot=progress-indicator]]:bg-score-pass"
       : value >= 40
-        ? "[&>[data-slot=progress-indicator]]:bg-pollen-500"
-        : "[&>[data-slot=progress-indicator]]:bg-stone-500";
+        ? "[&>[data-slot=progress-indicator]]:bg-score-warn"
+        : "[&>[data-slot=progress-indicator]]:bg-slate-400";
   return (
     <span className="flex items-center gap-2">
-      <Progress value={value} className={cn("h-1 w-11 bg-dust", tone)} />
+      <Progress value={value} className={cn("h-1 w-11 bg-warm-500", fill)} />
       <span className="font-mono text-[11px] text-muted-foreground">{value}</span>
     </span>
   );
@@ -99,7 +93,7 @@ export function HighlightedText({
   return (
     <>
       {text.slice(0, start)}
-      <mark className="rounded-sm bg-pollen-200 px-0.5 text-foreground">
+      <mark className="rounded-sm bg-pollen px-0.5 text-foreground">
         {text.slice(start, end)}
       </mark>
       {text.slice(end)}
@@ -128,7 +122,7 @@ export function VerifiedBadge({
     <Tooltip>
       <TooltipTrigger asChild>
         <span>
-          <Chip tone={verified ? "ok" : "alert"} className="gap-1">
+          <Chip tone={verified ? "met" : "not-met"}>
             {verified ? <Check className="size-3" /> : <X className="size-3" />}
             {verified
               ? `Verified${method === "fuzzy" ? " (normalised)" : ""}`
@@ -168,22 +162,35 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
   );
 }
 
+/** Soft notice surface, sharing the status tokens with the pills. */
+export function Banner({
+  tone = "warn",
+  children,
+  className,
+}: {
+  tone?: "warn" | "danger" | "info";
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("banner", `banner-${tone}`, className)}>{children}</div>;
+}
+
 /** Quoted policy text. Monospaced so the reader sees it exactly as written —
  *  these strings are checked character-for-character. */
 export function Quote({
   children,
-  tone = "ok",
+  tone = "met",
   className,
 }: {
   children: ReactNode;
-  tone?: "ok" | "warn" | "alert" | "info";
+  tone?: "met" | "partial" | "not-met" | "info";
   className?: string;
 }) {
   const border = {
-    ok: "border-l-meadow",
-    warn: "border-l-pollen-500",
-    alert: "border-l-brick",
-    info: "border-l-sky-600",
+    met: "border-l-[var(--status-met-dot)]",
+    partial: "border-l-[var(--status-partial-dot)]",
+    "not-met": "border-l-[var(--status-not-met-dot)]",
+    info: "border-l-[var(--status-info-dot)]",
   }[tone];
   return <div className={cn("quote-block", border, className)}>{children}</div>;
 }
