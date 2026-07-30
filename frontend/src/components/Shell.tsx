@@ -2,18 +2,18 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import {
   ChevronRight,
+  ChevronsRight,
   CircleHelp,
   ClipboardCheck,
   FileText,
   PanelLeftClose,
-  PanelLeftOpen,
   RefreshCcw,
   Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Logo } from "./Logo";
+import { Logo, LogoMark } from "./Logo";
 
 /** The sections this module implements. */
 export type Section = "audit" | "change" | "policies";
@@ -60,7 +60,7 @@ function NavItem({
         "flex w-full items-center rounded-md text-[13px]",
         "duration-[var(--motion-fast)] ease-[var(--ease-standard)]",
         "transition-[background-color,color]",
-        collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-2",
+        collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2 py-2",
         active
           ? "bg-obsidian font-medium text-white"
           : "text-slate-700 hover:bg-white",
@@ -106,39 +106,54 @@ export function Shell({
           main header, so it belongs to the thing it operates on. */}
       <aside
         className={cn(
-          "hidden shrink-0 flex-col border-r bg-[#faf8f5] md:flex",
+          "sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-[#faf8f5] md:flex",
           "duration-[var(--motion-base)] ease-[var(--ease-standard)] transition-[width]",
           collapsed ? "w-[60px]" : "w-[232px]",
         )}
       >
-        <div className={cn("border-b", collapsed ? "px-2" : "px-4")}>
+        <div className={cn("border-b", collapsed ? "px-2" : "px-3")}>
           {/* Rule between the two identities: Readily is the product, the block
               below is the tenant. Stacked without it they read as one lockup. */}
-          <div
-            className={cn(
-              "flex items-center border-b py-3",
-              collapsed ? "justify-center" : "justify-between gap-2",
-            )}
-          >
-            {!collapsed && <Logo className="h-6 shrink-0 text-obsidian" />}
-            <button
-              type="button"
-              onClick={() => setCollapsed((v) => !v)}
-              aria-expanded={!collapsed}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
-            >
-              {collapsed ? (
-                <PanelLeftOpen className="size-4" />
-              ) : (
-                <PanelLeftClose className="size-4" />
-              )}
-            </button>
-          </div>
+          {collapsed ? (
+            <div className="flex flex-col items-center gap-1.5 border-b py-3">
+              <LogoMark className="size-6 text-obsidian" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed(false)}
+                    aria-expanded={false}
+                    aria-label="Expand sidebar"
+                    className="grid size-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
+                  >
+                    <ChevronsRight className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Expand sidebar</TooltipContent>
+              </Tooltip>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2 border-b py-3">
+              <Logo className="h-6 shrink-0 text-obsidian" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed(true)}
+                    aria-expanded
+                    aria-label="Collapse sidebar"
+                    className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
+                  >
+                    <PanelLeftClose className="size-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Collapse sidebar</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
 
           {/* Stands in for the org switcher a real deployment provides. */}
-          <div className={cn("py-3.5", collapsed && "flex justify-center")}>
+          <div className={cn("py-3", collapsed && "flex justify-center")}>
           {collapsed ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -166,7 +181,7 @@ export function Shell({
           </div>
         </div>
 
-        <nav className={cn("flex-1 py-3", collapsed ? "px-2" : "px-2.5")}>
+        <nav className={cn("flex-1 overflow-y-auto py-3", collapsed ? "px-2" : "px-3")}>
           <ul className="flex flex-col gap-1">
             {NAV.map((e) => (
               <NavItem
@@ -183,7 +198,7 @@ export function Shell({
 
         {/* Signed-in user sits at the foot of the rail, where the account
             belongs in a product shell. */}
-        <div className={cn("border-t py-3", collapsed ? "px-2" : "px-3")}>
+        <div className={cn("shrink-0 border-t py-3", collapsed ? "px-2" : "px-3")}>
           {collapsed ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -204,7 +219,7 @@ export function Shell({
           ) : (
             <button
               type="button"
-              className="flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-white"
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white"
             >
               <span className="grid size-7 shrink-0 place-items-center rounded-full bg-obsidian text-[11px] font-medium text-white">
                 AJ
