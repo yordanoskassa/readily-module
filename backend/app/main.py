@@ -7,6 +7,7 @@ import csv
 import io
 import json
 import shutil
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -22,7 +23,15 @@ from .db import init_db, session
 from .questionnaire import parse_questions
 from .retrieval import keyword_search, page_context
 
-app = FastAPI(title="Readily Module", version="1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Ensure the schema exists before the first request."""
+    init_db()
+    yield
+
+
+app = FastAPI(title="Readily Module", version="1.0", lifespan=lifespan)
 
 # The frontend dev server runs on a different port; the built bundle is served
 # same-origin so this only matters in development.
@@ -35,11 +44,6 @@ app.add_middleware(
 
 SETTINGS = get_settings()
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    init_db()
 
 
 # --------------------------------------------------------------------------

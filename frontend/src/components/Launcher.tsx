@@ -91,7 +91,7 @@ export function Launcher({
   return (
     <div className="flex max-w-3xl flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <span className="label-1">{isQ ? "Module 1" : "Module 2"}</span>
+        <span className="label-1">{isQ ? "Audit Review" : "Regulatory Change"}</span>
         <h1 className="text-[34px] leading-tight">
           {isQ ? "Answer a Submission Review Form" : "Pull the obligations out of a Policy Guide"}
         </h1>

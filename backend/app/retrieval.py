@@ -234,6 +234,27 @@ def _hydrate(conn, chunk_ids: list[int], scores: dict[int, float]) -> list[Passa
     return out
 
 
+def _rank_documents(
+    conn, phrasings: list[str], topics: list[str] | None = None
+) -> dict[int, float]:
+    """Fused document-level ranking: which P&Ps could own this obligation.
+
+    Kept separate from passage ranking because both evidence modes need it —
+    passage mode uses it to boost, document mode uses it as the whole answer.
+    """
+    s = get_settings()
+    rankings: list[list[int]] = []
+    for phrasing in phrasings:
+        rows = fts_query(conn, _DOC_SQL, build_match(phrasing), (s.doc_candidates,))
+        rankings.append([r["doc_id"] for r in rows])
+    # Topic hints search titles, which is how a human finds the right policy
+    # when the body text does not use the regulator's words.
+    for topic in (topics or [])[:5]:
+        rows = fts_query(conn, _DOC_SQL, build_match(topic), (s.doc_candidates,))
+        rankings.append([r["doc_id"] for r in rows])
+    return reciprocal_rank_fuse(rankings)
+
+
 def search_passages(
     phrasings: list[str],
     topics: list[str] | None = None,
@@ -251,24 +272,12 @@ def search_passages(
     limit = limit or s.chunk_candidates
 
     with session() as conn:
-        doc_rankings: list[list[int]] = []
         chunk_rankings: list[list[int]] = []
-
         for phrasing in phrasings:
-            match = build_match(phrasing)
-            doc_rows = fts_query(conn, _DOC_SQL, match, (s.doc_candidates,))
-            doc_rankings.append([r["doc_id"] for r in doc_rows])
-            chunk_rows = fts_query(conn, _CHUNK_SQL, match, (limit,))
+            chunk_rows = fts_query(conn, _CHUNK_SQL, build_match(phrasing), (limit,))
             chunk_rankings.append([r["chunk_id"] for r in chunk_rows])
 
-        # Topic hints search titles, which is how a human finds the right
-        # policy when the body text does not use the regulator's words.
-        for topic in (topics or [])[:5]:
-            match = build_match(topic)
-            rows = fts_query(conn, _DOC_SQL, match, (s.doc_candidates,))
-            doc_rankings.append([r["doc_id"] for r in rows])
-
-        doc_scores = reciprocal_rank_fuse(doc_rankings)
+        doc_scores = _rank_documents(conn, phrasings, topics)
         chunk_scores = reciprocal_rank_fuse(chunk_rankings)
         if not chunk_scores:
             return []
@@ -339,6 +348,211 @@ async def retrieve(
         search_passages, phrasings, expansion.likely_topics, None, only_policies
     )
     return expansion, passages
+
+
+# --------------------------------------------------------------------------
+# Whole-document retrieval
+# --------------------------------------------------------------------------
+#
+# Passage retrieval can only fail silently: if FTS5 never surfaces the right
+# chunk there is no quote to verify and no contradiction to sweep, and the run
+# reports a confident "not found". The trust layer covers fabrication, not
+# absence.
+#
+# These policies are small — 9.7 pages and ~6.2k tokens on average, ~10.6k at
+# the 90th percentile. So the fix is not better passage ranking; it is to stop
+# ranking passages. Shortlist documents (already the first stage) and put the
+# complete policy text in front of the reasoning model. Retrieval then only has
+# to get the *document* right, which is a much easier target than getting the
+# right chunk of it.
+
+CHARS_PER_TOKEN = 4  # rough, and only used to keep a prompt inside a budget
+
+
+@dataclass
+class DocumentBundle:
+    """A whole policy, with its pages, ready to put in a prompt."""
+
+    doc_id: int
+    policy_code: str
+    title: str
+    program: str
+    department: str
+    applicable_to: str
+    revised_date: str
+    n_pages: int
+    pages: list[tuple[int, str]] = field(default_factory=list)
+    score: float = 0.0
+
+    @property
+    def est_tokens(self) -> int:
+        return sum(len(t) for _, t in self.pages) // CHARS_PER_TOKEN
+
+    def render(self) -> str:
+        """The document as the model sees it, with page markers.
+
+        The markers are for the model's benefit only. Quote verification never
+        runs against this string — it runs against the raw page text — so an
+        injected marker can never end up inside a verified quote.
+        """
+        head = (
+            f"{self.policy_code} — {self.title}\n"
+            f"Department: {self.department or 'n/a'} · "
+            f"Applies to: {self.applicable_to or 'n/a'} · "
+            f"Revised: {self.revised_date or 'n/a'} · {self.n_pages} pages"
+        )
+        body = "\n\n".join(f"[page {no}]\n{text}" for no, text in self.pages)
+        return f"{head}\n\n{body}"
+
+    def page_spans(self) -> list[tuple[int, int, str]]:
+        """Text units a quote may legitimately live in, tightest first.
+
+        Single pages come first so attribution is as narrow as possible. The
+        consecutive pairs exist because a sentence split across a page break
+        appears in neither page alone, and rejecting those quotes would discard
+        real evidence.
+        """
+        spans = [(no, no, text) for no, text in self.pages]
+        spans += [
+            (a_no, b_no, f"{a_text}\n{b_text}")
+            for (a_no, a_text), (b_no, b_text) in zip(self.pages, self.pages[1:])
+        ]
+        return spans
+
+
+def load_documents(doc_ids: list[int]) -> list[DocumentBundle]:
+    """Hydrate whole documents, page text included, in the order given."""
+    if not doc_ids:
+        return []
+    marks = ",".join("?" * len(doc_ids))
+    with session() as conn:
+        rows = conn.execute(
+            f"""SELECT id, policy_code, title, program, department, applicable_to,
+                       revised_date, n_pages
+                FROM documents WHERE id IN ({marks})""",
+            doc_ids,
+        ).fetchall()
+        by_id = {r["id"]: r for r in rows}
+        page_rows = conn.execute(
+            f"""SELECT doc_id, page_no, text FROM pages
+                WHERE doc_id IN ({marks}) ORDER BY doc_id, page_no""",
+            doc_ids,
+        ).fetchall()
+
+    pages: dict[int, list[tuple[int, str]]] = {}
+    for r in page_rows:
+        pages.setdefault(r["doc_id"], []).append((r["page_no"], r["text"]))
+
+    out: list[DocumentBundle] = []
+    for did in doc_ids:  # preserve ranked order
+        r = by_id.get(did)
+        if not r:
+            continue
+        out.append(
+            DocumentBundle(
+                doc_id=did, policy_code=r["policy_code"], title=r["title"],
+                program=r["program"], department=r["department"] or "",
+                applicable_to=r["applicable_to"] or "",
+                revised_date=r["revised_date"] or "", n_pages=r["n_pages"] or 0,
+                pages=pages.get(did, []),
+            )
+        )
+    return out
+
+
+def search_documents(
+    phrasings: list[str],
+    topics: list[str] | None = None,
+    only_policies: list[str] | None = None,
+    max_docs: int | None = None,
+    token_budget: int | None = None,
+) -> list[DocumentBundle]:
+    """Shortlist whole policies, filled greedily by rank up to a token budget.
+
+    The budget is a real constraint rather than a formality: the median policy
+    is ~4.9k tokens but the largest is ~66k, so a fixed document count varies
+    more than tenfold in prompt size. Filling by rank means a giant policy
+    cannot evict several better-ranked small ones.
+    """
+    s = get_settings()
+    max_docs = max_docs or s.doc_context_max
+    token_budget = token_budget or s.doc_context_token_budget
+
+    with session() as conn:
+        if only_policies:
+            # An analyst redirect ("look in GG.1550") is a hard filter, matching
+            # the passage path: if she names the policy she means it.
+            wanted = {c.strip().upper() for c in only_policies if c.strip()}
+            rows = conn.execute(
+                f"""SELECT id FROM documents
+                    WHERE UPPER(policy_code) IN ({','.join('?' * len(wanted))})""",
+                list(wanted),
+            ).fetchall()
+            named = [r["id"] for r in rows]
+            if named:
+                ranked = named
+            else:
+                ranked = [
+                    d for d, _ in sorted(
+                        _rank_documents(conn, phrasings, topics).items(),
+                        key=lambda kv: -kv[1],
+                    )
+                ]
+        else:
+            scores = _rank_documents(conn, phrasings, topics)
+            ranked = [d for d, _ in sorted(scores.items(), key=lambda kv: -kv[1])]
+
+    if not ranked:
+        return []
+
+    # Hydrate a little beyond max_docs so the budget can skip an oversized
+    # policy and still fill the slot with the next one down.
+    bundles = load_documents(ranked[: max_docs * 3])
+    chosen: list[DocumentBundle] = []
+    spent = 0
+    for i, b in enumerate(bundles):
+        if len(chosen) >= max_docs:
+            break
+        cost = b.est_tokens
+        if chosen and spent + cost > token_budget:
+            continue
+        b.score = round(1.0 / (RRF_K + i + 1), 6)
+        chosen.append(b)
+        spent += cost
+    return chosen
+
+
+def chunks_in_range(doc_id: int, page_start: int, page_end: int) -> list[dict]:
+    """Chunks overlapping a page range — used to map a verified quote back to a
+    chunk id, which is what the UI's citation-swap and context views key on."""
+    with session() as conn:
+        rows = conn.execute(
+            """SELECT id, page_start, page_end, heading, text FROM chunks
+               WHERE doc_id = ? AND page_start <= ? AND page_end >= ?
+               ORDER BY ord""",
+            (doc_id, page_end, page_start),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+async def retrieve_documents(
+    question: str,
+    hint: str = "",
+    only_policies: list[str] | None = None,
+) -> tuple[Expansion, list[DocumentBundle]]:
+    """Expand the question, then shortlist whole policies instead of passages.
+
+    The expansion still matters — document ranking is lexical too, and the
+    regulator's vocabulary still has to be translated to find the right P&P.
+    """
+    expansion = await expand_question(question)
+    phrasings = expansion.search_phrasings(question)
+    if hint.strip():
+        phrasings = [hint.strip(), *phrasings]
+    docs = await asyncio.to_thread(
+        search_documents, phrasings, expansion.likely_topics, only_policies
+    )
+    return expansion, docs
 
 
 def keyword_search(query: str, limit: int = 25) -> list[Passage]:

@@ -39,6 +39,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Chip } from "./bits";
+import { Logo, LogoMark } from "./Logo";
 
 /** The three modules this build actually implements. */
 export type Section = "audit" | "change" | "policies";
@@ -161,11 +162,9 @@ export function Shell({
     <SidebarProvider>
       <Sidebar collapsible="icon" className="border-r">
         <SidebarHeader className="gap-3 border-b px-4 py-3.5">
-          <img
-            src="/logo-readily.svg"
-            alt="Readily"
-            className="h-[14px] w-auto self-start group-data-[collapsible=icon]:hidden"
-          />
+          {/* Full lockup when expanded, glyph alone on the collapsed rail. */}
+          <Logo className="h-[15px] self-start text-obsidian group-data-[collapsible=icon]:hidden" />
+          <LogoMark className="hidden size-5 text-obsidian group-data-[collapsible=icon]:block" />
           {/* Stands in for the org switcher a real deployment would have. */}
           <div className="flex items-center gap-2 group-data-[collapsible=icon]:hidden">
             <span className="grid size-6 shrink-0 place-items-center rounded-md bg-meadow text-[10px] font-medium text-cloud">

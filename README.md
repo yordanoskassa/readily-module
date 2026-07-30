@@ -69,8 +69,16 @@ Submission Review Form (PDF)
   │             exceptions, narrower scope, different timeframes  │
   └───────────────────────────────────────────────────────────────┘
         ▼
-  streamed to the UI as each answer lands → accept / flag / edit → CSV
+  streamed to the UI as each answer lands → review → CSV
 ```
+
+Once the batch finishes, each row is a starting point rather than a verdict.
+`ask` answers a follow-up from the passages already retrieved (one cheap call —
+it settles the Medi-Cal-vs-OneCare question the reviewer note keeps raising).
+`redirect` re-runs one item with a free-text hint and/or a hard filter to named
+policies. `swap` cites a different passage from the runners-up. All three are
+held to the same verbatim check, and a quote you type that fails is **rejected
+rather than quietly replaced** with different real text from the passage.
 
 ### The trust layer
 
@@ -160,6 +168,21 @@ ones are never mistaken for absent.
 
 ---
 
+## Where it sits
+
+The UI is framed as one module inside Readily's platform rather than a standalone
+app, using their own information architecture — Policies, Legislation,
+Regulations, Contracts, Reports and Case Files under the Audit Review,
+Regulatory Change and Monitoring pillars. The two pillars this build implements
+map onto the two modules; everything else is rendered but visibly inert, dimmed
+and labelled as not implemented here. Showing the whole surface is what makes
+the module's place legible — faking the rest would not.
+
+Built on shadcn/ui with Readily's palette mapped onto its token system. `primary`
+is obsidian rather than the meadow green on purpose: meadow already means
+"supported citation" here, and reusing it for every button would blur the status
+system.
+
 ## Running it
 
 ```bash
@@ -234,7 +257,8 @@ out — concurrent identical prefixes cannot read a cache entry that is still be
   can still be missed. This was a deliberate trade for a deployable single-file index.
 - **Text PDFs only.** No OCR, so a scanned policy is skipped at ingest (none in this
   corpus).
-- **No auth or multi-tenancy.** One shared corpus, no user accounts.
+- **No auth or multi-tenancy.** One shared corpus, no user accounts. The org
+  switcher and platform search in the shell are chrome, not features.
 - **Guide coverage is partial by design, and over-extracts.** 422 obligations from 145 pages
   is more than the ~231 modal-verb cues I counted in the source, so adjacent windows are
   producing some near-duplicates that the loose text key does not catch. Coverage is checked

@@ -33,6 +33,25 @@ class Settings(BaseSettings):
     chunk_candidates: int = 30
     verify_passages: int = 10
 
+    # --- evidence mode ---
+    # "documents" sends whole shortlisted policies to the reasoning model;
+    # "passages" sends the top chunks. The corpus averages 9.7 pages (~6.2k
+    # tokens) per policy, so a document shortlist fits in context comfortably
+    # and a passage that lexical search ranked poorly can no longer be missed.
+    # Recall failures are silent — nothing downstream can flag a policy that
+    # retrieval never surfaced — so the passage-level recall risk is the one
+    # error the trust layer cannot cover.
+    evidence_mode: str = "documents"
+    # Whole policies to send, and the ceiling on their combined size. The
+    # budget matters because the corpus is skewed: the median policy is ~4.9k
+    # tokens but AA.1000 is ~66k, so a fixed document count has a 10x spread.
+    doc_context_max: int = 8
+    doc_context_token_budget: int = 150_000
+
+    @property
+    def whole_document_mode(self) -> bool:
+        return self.evidence_mode.strip().lower() == "documents"
+
     @property
     def llm_enabled(self) -> bool:
         return bool(self.anthropic_api_key.strip())

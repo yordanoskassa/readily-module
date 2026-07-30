@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field
 from . import llm
 from .config import get_settings
 from .db import build_match, fts_query, session
-from .retrieval import Passage
+from .retrieval import DocumentBundle, Passage, chunks_in_range
 
 # Below this ratio a near-match is treated as not found rather than "close
 # enough". 0.85 tolerates PDF line-wrap and punctuation drift while still
@@ -477,6 +477,280 @@ async def assess_evidence(
 
     # A claim of support with no surviving verifiable quote is downgraded, not
     # reported. Otherwise the discard guard above would be cosmetic.
+    if status in ("supported", "partial") and not citations:
+        status = "not_found"
+        confidence = min(confidence, 20)
+
+    return Assessment(
+        status=status,
+        confidence=confidence,
+        citations=citations,
+        gap=data.get("gap") or "",
+        reasoning=data.get("reasoning") or "",
+        reviewer_note=data.get("reviewer_note") or "",
+        suggested_language=data.get("suggested_language") or "",
+        discarded_quotes=discarded,
+    )
+
+
+# --------------------------------------------------------------------------
+# 2b. Whole-document assessment
+# --------------------------------------------------------------------------
+#
+# Same trust layer, different evidence unit. The model reads complete policies
+# instead of chunks, which removes the one failure the guards above cannot see:
+# a passage that lexical retrieval ranked too low to send. It also lets page
+# numbers be *derived* rather than claimed — the quote is located in the page
+# text, so the citation's page comes from where the text actually is.
+
+DOC_CITATION_SCHEMA = llm.obj(
+    {
+        "document_id": {"type": "integer",
+                        "description": "The [id] of the policy document this quote "
+                                       "comes from."},
+        "quote": {"type": "string",
+                  "description": "Verbatim sentence(s) copied exactly from that "
+                                 "document's text."},
+        "covers": {"type": "string",
+                   "description": "Which part of the obligation this quote establishes."},
+    }
+)
+
+DOC_ASSESSMENT_SCHEMA = llm.obj(
+    {
+        "status": llm.enum("supported", "partial", "not_found"),
+        "confidence": {"type": "integer",
+                       "description": "0-100: how likely a DHCS reviewer would "
+                                      "accept this citation."},
+        "citations": llm.arr(DOC_CITATION_SCHEMA, 4),
+        "gap": {"type": "string",
+                "description": "What the P&Ps do not say. Empty when status is supported."},
+        "reasoning": {"type": "string",
+                      "description": "Two or three sentences on how the documents map to "
+                                     "the obligation, including vocabulary differences."},
+        "reviewer_note": {"type": "string",
+                          "description": "The specific judgement call a human should "
+                                         "double-check, or empty if there is none."},
+        "suggested_language": {"type": "string",
+                               "description": "For partial/not_found: draft P&P wording "
+                                              "that would satisfy the obligation. Else empty."},
+    }
+)
+
+DOC_ASSESSMENT_SYSTEM = """\
+You are assisting a compliance analyst at a California Medi-Cal managed care \
+plan. She must answer a DHCS Submission Review Form question by citing the \
+exact passage in her plan's Policies and Procedures that proves compliance.
+
+The stakes are asymmetric. A missed citation costs her time. A wrong citation \
+becomes a state finding that goes to DHCS and her board. **Never assert \
+compliance you cannot point to.** "not_found" is a correct, useful answer.
+
+You will get the question and a small set of **complete policy documents** \
+shortlisted from the plan's library, each with page markers. Read them in full. \
+The obligation may be stated anywhere in a document, in the plan's own \
+vocabulary rather than the regulator's — a keyword search would have missed it, \
+which is why you are given whole documents.
+
+Because you can see each policy end to end, you are also responsible for \
+qualifying language: if a document states the obligation in one section and \
+then narrows it, carves out an exception, or gives a different deadline \
+elsewhere, that makes the answer `partial`, not `supported`. Say so in the gap.
+
+Decide:
+
+status
+  supported  - the documents state the obligation. Every element of it, with no
+               exception elsewhere in the document that undercuts it.
+  partial    - they address the topic but omit, weaken, or narrow part of the
+               obligation (a missing timeframe, a narrower population, a
+               "should" where the regulator says "must").
+  not_found  - the documents do not establish the obligation. Choose this
+               rather than stretching a loosely related passage.
+
+confidence
+  0-100, about whether a DHCS reviewer would accept the citation. Be honest;
+  a well-calibrated 55 is more useful than a reflexive 90.
+
+citations
+  Only when status is supported or partial. Each quote must be copied
+  **character for character** from the document text — do not clean up spacing,
+  fix typos, join hyphenated line breaks, or paraphrase. Do not include the
+  `[page N]` markers inside a quote. Quotes are checked against the source
+  automatically and a quote that does not appear verbatim is discarded. Prefer
+  one or two decisive sentences over a long excerpt. You do not need to report
+  page numbers — the page is determined from where the quote is found.
+
+gap
+  For partial/not_found, name precisely what is missing, in the regulator's
+  terms. This is what she will use to scope a policy revision.
+
+reasoning
+  How the documents map onto the obligation. Call out vocabulary differences
+  explicitly when they matter — e.g. the question says "retrospective request"
+  and the policy says "post-service review", or the question says "six months"
+  and the policy writes "six (6) months". That translation is the judgement she
+  is paying you for.
+
+reviewer_note
+  The one thing most likely to be wrong in your assessment: an inference you
+  made, an ambiguous term, a document that applies to a different line of
+  business (Medi-Cal vs OneCare vs PACE) than the question targets. Empty only
+  if the citation is genuinely unambiguous.
+
+suggested_language
+  For partial/not_found only: one or two sentences of P&P wording, in the
+  plan's register, that would satisfy the obligation. Empty when supported.
+
+Beware of line-of-business mismatches: a document from a OneCare (Medicare) or \
+PACE policy does not prove compliance with a Medi-Cal APL. Note it in \
+reviewer_note if you rely on one."""
+
+
+@dataclass
+class QuoteLocation:
+    """Where a verified quote physically sits in a document."""
+
+    check: QuoteCheck
+    page_start: int
+    page_end: int
+    chunk_id: int
+    heading: str = ""
+
+
+def locate_quote(quote: str, doc: DocumentBundle) -> QuoteLocation:
+    """Find `quote` in a whole document and report the page it is actually on.
+
+    Single pages are tried before consecutive pairs so attribution stays as
+    narrow as the evidence allows; the pairs exist only so a sentence broken
+    across a page boundary still verifies. Exact matches are preferred over
+    fuzzy ones across the whole document rather than accepting the first fuzzy
+    hit, because a fuzzy match on page 2 must not beat an exact one on page 9.
+    """
+    best: QuoteLocation | None = None
+    for page_start, page_end, text in doc.page_spans():
+        check = verify_quote(quote, text)
+        if not check.verified:
+            continue
+        loc = QuoteLocation(check=check, page_start=page_start, page_end=page_end,
+                            chunk_id=-1)
+        if check.method == "exact":
+            return _attach_chunk(loc, doc)
+        if best is None or check.similarity > best.check.similarity:
+            best = loc
+
+    if best is None:
+        return QuoteLocation(
+            check=QuoteCheck(False, "not_found", 0.0), page_start=0, page_end=0,
+            chunk_id=-1,
+        )
+    return _attach_chunk(best, doc)
+
+
+def _attach_chunk(loc: QuoteLocation, doc: DocumentBundle) -> QuoteLocation:
+    """Map a located quote onto a chunk id, which the UI keys citations on."""
+    candidates = chunks_in_range(doc.doc_id, loc.page_start, loc.page_end)
+    for ch in candidates:
+        if verify_quote(loc.check.matched_text, ch["text"]).verified:
+            loc.chunk_id = ch["id"]
+            loc.heading = ch["heading"] or ""
+            return loc
+    if candidates:  # quote straddles a chunk boundary; the first overlap is closest
+        loc.chunk_id = candidates[0]["id"]
+        loc.heading = candidates[0]["heading"] or ""
+    return loc
+
+
+def _render_documents(docs: list[DocumentBundle]) -> str:
+    return "\n\n".join(
+        f"===== DOCUMENT [{i}] =====\n{d.render()}"
+        for i, d in enumerate(docs, start=1)
+    )
+
+
+async def assess_evidence_documents(
+    question: str, obligation: str, docs: list[DocumentBundle]
+) -> Assessment:
+    """Whole-document verdict. Every quote is still verified against the source."""
+    if not docs:
+        return Assessment(
+            status="not_found",
+            confidence=0,
+            gap="No policy in the P&P library matched this obligation.",
+            reasoning="Document retrieval returned no candidates.",
+        )
+
+    s = get_settings()
+    user = (
+        f"QUESTION FROM THE REGULATOR\n{question}\n\n"
+        f"THE OBLIGATION, RESTATED\n{obligation}\n\n"
+        f"COMPLETE POLICY DOCUMENTS FROM THE PLAN'S P&P LIBRARY\n\n"
+        f"{_render_documents(docs)}"
+    )
+
+    try:
+        data = await llm.structured(
+            system=DOC_ASSESSMENT_SYSTEM,
+            user=user,
+            schema=DOC_ASSESSMENT_SCHEMA,
+            model=s.model_reasoning,
+            max_tokens=12000,
+            effort="high",
+            cache_key="assessment_documents",
+        )
+    except llm.LLMError as exc:
+        # Same reasoning as the passage path: a failed call must never look like
+        # an absence of evidence.
+        return Assessment(
+            status="error", confidence=0,
+            reasoning="The assessment did not complete, so this question is "
+                      "unanswered. Re-run it.",
+            error=str(exc),
+        )
+
+    by_id = {i: d for i, d in enumerate(docs, start=1)}
+    citations: list[Citation] = []
+    discarded: list[dict] = []
+
+    for raw in data.get("citations") or []:
+        did = raw.get("document_id")
+        doc = by_id.get(did)
+        quote = (raw.get("quote") or "").strip()
+        if not doc or not quote:
+            discarded.append({"quote": quote, "reason": "unknown document id",
+                              "passage_id": did})
+            continue
+
+        loc = locate_quote(quote, doc)
+        if not loc.check.verified:
+            discarded.append({
+                "quote": quote,
+                "reason": "not found verbatim in the cited document",
+                "similarity": loc.check.similarity,
+                "cite": doc.policy_code,
+            })
+            continue
+
+        citations.append(
+            Citation(
+                passage_id=did,
+                quote=loc.check.matched_text or quote,
+                covers=raw.get("covers") or "",
+                policy_code=doc.policy_code,
+                title=doc.title,
+                page_start=loc.page_start,
+                page_end=loc.page_end,
+                doc_id=doc.doc_id,
+                chunk_id=loc.chunk_id,
+                quote_check=loc.check.as_dict(),
+            )
+        )
+
+    status = data.get("status") or "not_found"
+    confidence = max(0, min(100, int(data.get("confidence") or 0)))
+
+    # A claim of support with no surviving verifiable quote is downgraded, not
+    # reported — identical to the passage path.
     if status in ("supported", "partial") and not citations:
         status = "not_found"
         confidence = min(confidence, 20)
