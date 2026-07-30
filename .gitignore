@@ -23,3 +23,6 @@ data/index.db-shm
 
 # vite build output is produced in the Docker image
 frontend/dist/
+
+# tsc incremental build cache
+frontend/tsconfig.tsbuildinfo
