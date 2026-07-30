@@ -17,6 +17,32 @@ import { Logo, LogoMark } from "./Logo";
 /** The sections this module implements. */
 export type Section = "audit" | "change" | "policies";
 
+/** Shown wherever Readily's mark appears. This is a take-home exercise built
+ *  against Readily's public brand — it is not their product, and nothing here
+ *  should be readable as an official build. */
+const DISCLAIMER =
+  "Independent take-home project. Not affiliated with, endorsed by, or an " +
+  "official product of Readily.";
+
+function DemoBadge() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="shrink-0 rounded-full border px-1.5 py-px
+                     text-[9.5px] font-medium uppercase tracking-[0.08em]
+                     text-muted-foreground"
+        >
+          Demo
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="max-w-64">
+        {DISCLAIMER}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 /** One flat list — only surfaces this build actually implements. */
 const NAV: { key: Section; label: string; icon: LucideIcon; hint: string }[] = [
   {
@@ -116,13 +142,27 @@ export function Shell({
           <div
             className={cn(
               "flex items-center border-b py-3",
-              collapsed ? "justify-center" : "",
+              collapsed ? "justify-center" : "gap-2",
             )}
           >
+            {/* The logo is Readily's, this project is not. The badge rides with
+                the mark everywhere it appears so no screenshot of this tool can
+                be mistaken for Readily's actual product. Collapsed there is no
+                room for it, so the disclaimer moves into the tooltip. */}
             {collapsed ? (
-              <LogoMark className="size-6 text-obsidian" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <LogoMark className="size-6 text-obsidian" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right">{DISCLAIMER}</TooltipContent>
+              </Tooltip>
             ) : (
-              <Logo className="h-6 shrink-0 text-obsidian" />
+              <>
+                <Logo className="h-6 shrink-0 text-obsidian" />
+                <DemoBadge />
+              </>
             )}
           </div>
 
@@ -242,8 +282,12 @@ export function Shell({
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="z-40 shrink-0 bg-card">
           <div className="flex h-[52px] items-center gap-4 border-b px-5">
-            {/* Small screens drop the sidebar, so the mark returns here. */}
-            <Logo className="h-6 shrink-0 text-obsidian md:hidden" />
+            {/* Small screens drop the sidebar, so the mark — and its badge —
+                return here. */}
+            <span className="flex shrink-0 items-center gap-2 md:hidden">
+              <Logo className="h-6 shrink-0 text-obsidian" />
+              <DemoBadge />
+            </span>
 
             <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
               <ol className="flex min-w-0 items-center gap-1.5 text-[12.5px]">
@@ -307,6 +351,9 @@ export function Shell({
 
         <footer className="shrink-0 border-t bg-card px-5 py-3 text-xs text-muted-foreground">
           {footer}
+          {/* Stated outright, not just on hover — the badge catches the eye,
+              this is the sentence someone can actually read and quote. */}
+          <span className="mt-1 block text-[11px] text-slate-500">{DISCLAIMER}</span>
         </footer>
       </div>
     </div>

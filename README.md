@@ -1,5 +1,11 @@
 # Readily Module — Regulatory Evidence
 
+> **Not a Readily product.** This is an independent take-home exercise, built against
+> Readily's publicly available brand to show what the module would look like inside their
+> product. It is not affiliated with, endorsed by, or an official build of Readily, and
+> the logo and colours belong to them. The UI carries the same notice so no screenshot of
+> it can be mistaken for the real thing.
+
 A module for Alex, a compliance analyst at a Medi-Cal managed care plan, covering the two
 jobs she described:
 

@@ -21,6 +21,12 @@ fi
 
 mkdir -p /app/data/uploads
 
+# Single process, deliberately. runs.py keeps the run registry, the asyncio
+# tasks executing them and the SSE subscriber queues in module-level memory, so
+# a second worker would answer polls for runs it has never heard of and the
+# progress stream would silently stall. Scaling out means moving that state into
+# the database first -- do NOT add --workers here.
 exec python -m uvicorn backend.app.main:app \
     --host 0.0.0.0 \
-    --port "${PORT:-8000}"
+    --port "${PORT:-8000}" \
+    --workers 1

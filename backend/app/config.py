@@ -22,11 +22,35 @@ class Settings(BaseSettings):
     model_reasoning: str = "claude-opus-5"
     llm_max_concurrency: int = 10
 
+    # --- serving ---
+    # Only consulted in development: the built bundle is served from this same
+    # origin in the container, so a deployed instance makes no cross-origin
+    # calls at all. Comma-separated when set from the environment.
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     # --- storage ---
+    # One knob. The rest derive from it, so pointing DATA_DIR at a mounted
+    # volume moves the index and uploads with it — previously each path was an
+    # independent field defaulted off REPO_DIR, so setting DATA_DIR relocated
+    # the directory while the index kept being read from the old location.
     data_dir: Path = REPO_DIR / "data"
-    corpus_dir: Path = REPO_DIR / "data" / "corpus"
-    index_path: Path = REPO_DIR / "data" / "index.db"
-    uploads_dir: Path = REPO_DIR / "data" / "uploads"
+
+    @property
+    def index_path(self) -> Path:
+        return self.data_dir / "index.db"
+
+    @property
+    def corpus_dir(self) -> Path:
+        """Source PDFs. Only needed to rebuild the index, never at runtime."""
+        return self.data_dir / "corpus"
+
+    @property
+    def uploads_dir(self) -> Path:
+        return self.data_dir / "uploads"
 
     # --- retrieval tuning ---
     doc_candidates: int = 10
@@ -67,6 +91,6 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     s = Settings()
-    for d in (s.data_dir, s.corpus_dir, s.uploads_dir):
+    for d in (s.data_dir, s.uploads_dir):
         d.mkdir(parents=True, exist_ok=True)
     return s

@@ -33,16 +33,18 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Readily Module", version="1.0", lifespan=lifespan)
 
-# The frontend dev server runs on a different port; the built bundle is served
-# same-origin so this only matters in development.
+SETTINGS = get_settings()
+
+# The Vite dev server runs on a different port. In the container the built
+# bundle is served from this same origin, so nothing here is cross-origin --
+# but the list is settable rather than hard-coded so a split deployment (static
+# host in front, API behind) does not need a code change.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=SETTINGS.cors_origin_list,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-SETTINGS = get_settings()
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 
