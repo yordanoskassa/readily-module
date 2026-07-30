@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import {
   ChevronRight,
+  CircleHelp,
   ClipboardCheck,
   FileText,
   PanelLeftClose,
@@ -180,6 +181,45 @@ export function Shell({
         </nav>
 
 
+        {/* Signed-in user sits at the foot of the rail, where the account
+            belongs in a product shell. */}
+        <div className={cn("border-t py-3", collapsed ? "px-2" : "px-3")}>
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="grid w-full place-items-center rounded-md py-1"
+                  aria-label="Alex Jordan, Compliance Analyst"
+                >
+                  <span className="grid size-7 place-items-center rounded-full bg-obsidian text-[11px] font-medium text-white">
+                    AJ
+                  </span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                Alex Jordan &middot; Compliance Analyst
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-white"
+            >
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-obsidian text-[11px] font-medium text-white">
+                AJ
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-medium leading-tight">
+                  Alex Jordan
+                </span>
+                <span className="block truncate text-[11px] leading-tight text-muted-foreground">
+                  Compliance Analyst
+                </span>
+              </span>
+            </button>
+          )}
+        </div>
       </aside>
 
       {/* ------------------------------------------------------------- main */}
@@ -227,9 +267,20 @@ export function Shell({
                   Part of the Readily platform. Not implemented in this module.
                 </TooltipContent>
               </Tooltip>
-              <span className="grid size-8 place-items-center rounded-full bg-meadow text-[11px] font-medium text-white">
-                AJ
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Help"
+                    className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <CircleHelp className="size-[18px]" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Part of the Readily platform. Not implemented in this module.
+                </TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </header>
