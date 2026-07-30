@@ -397,7 +397,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
       <Card
         className={`overflow-hidden p-0 ${
           open
-            ? "grid grid-cols-1 lg:h-[calc(100vh-13rem)] lg:grid-cols-[minmax(250px,330px)_minmax(0,1fr)]"
+            ? "grid grid-cols-1 lg:h-[calc(100vh-14rem)] lg:grid-cols-[minmax(250px,330px)_minmax(0,1fr)]"
             : ""
         }`}
       >

@@ -98,14 +98,14 @@ export function Shell({
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* ---------------------------------------------------------- sidebar
           #faf8f5 is --ds-sidebar, verbatim from Readily's product stylesheet.
           The collapse control lives at the foot of the rail rather than in the
           main header, so it belongs to the thing it operates on. */}
       <aside
         className={cn(
-          "sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-[#faf8f5] md:flex",
+          "hidden h-full shrink-0 flex-col border-r bg-[#faf8f5] md:flex",
           "duration-[var(--motion-base)] ease-[var(--ease-standard)] transition-[width]",
           collapsed ? "w-[60px]" : "w-[232px]",
         )}
@@ -239,8 +239,8 @@ export function Shell({
       </aside>
 
       {/* ------------------------------------------------------------- main */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 bg-card">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="z-40 shrink-0 bg-card">
           <div className="flex h-[52px] items-center gap-4 border-b px-5">
             {/* Small screens drop the sidebar, so the mark returns here. */}
             <Logo className="h-6 shrink-0 text-obsidian md:hidden" />
@@ -301,11 +301,11 @@ export function Shell({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1320px] flex-1 px-5 pb-16 pt-6">
-          {children}
+        <main className="flex-1 overflow-y-auto px-5 pb-12 pt-6">
+          <div className="mx-auto w-full max-w-[1320px]">{children}</div>
         </main>
 
-        <footer className="border-t bg-card px-5 py-3.5 text-xs text-muted-foreground">
+        <footer className="shrink-0 border-t bg-card px-5 py-3 text-xs text-muted-foreground">
           {footer}
         </footer>
       </div>
