@@ -12,7 +12,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Logo, LogoMark } from "./Logo";
+import { Logo } from "./Logo";
 
 /** The sections this module implements. */
 export type Section = "audit" | "change" | "policies";
@@ -119,22 +119,21 @@ export function Shell({
               collapsed ? "justify-center" : "justify-between gap-2",
             )}
           >
-            {collapsed ? (
-              <LogoMark className="size-6 shrink-0 text-obsidian" />
-            ) : (
-              <Logo className="h-6 shrink-0 text-obsidian" />
-            )}
-            {!collapsed && (
-              <button
-                type="button"
-                onClick={() => setCollapsed(true)}
-                aria-expanded
-                aria-label="Collapse sidebar"
-                className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
-              >
+            {!collapsed && <Logo className="h-6 shrink-0 text-obsidian" />}
+            <button
+              type="button"
+              onClick={() => setCollapsed((v) => !v)}
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="size-4" />
+              ) : (
                 <PanelLeftClose className="size-4" />
-              </button>
-            )}
+              )}
+            </button>
           </div>
 
           {/* Stands in for the org switcher a real deployment provides. */}
@@ -180,19 +179,7 @@ export function Shell({
           </ul>
         </nav>
 
-        {collapsed && (
-          <div className="border-t px-2 py-2">
-            <button
-              type="button"
-              onClick={() => setCollapsed(false)}
-              aria-expanded={false}
-              aria-label="Expand sidebar"
-              className="flex w-full justify-center rounded-md py-2 text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
-            >
-              <PanelLeftOpen className="size-4" />
-            </button>
-          </div>
-        )}
+
       </aside>
 
       {/* ------------------------------------------------------------- main */}
@@ -247,8 +234,8 @@ export function Shell({
           </div>
         </header>
 
-        <main className="w-full flex-1 bg-[#fafafa] px-5 pb-16 pt-6">
-          <div className="mx-auto w-full max-w-[1320px]">{children}</div>
+        <main className="mx-auto w-full max-w-[1320px] flex-1 px-5 pb-16 pt-6">
+          {children}
         </main>
 
         <footer className="border-t bg-card px-5 py-3.5 text-xs text-muted-foreground">
