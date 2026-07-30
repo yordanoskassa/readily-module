@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, Loader2, Square } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, Download, Loader2, Square } from "lucide-react";
 import { ANSWER_LABEL, COVERAGE_LABEL, STATUS_LABEL, api, streamRun } from "@/lib/api";
 import type { Item, ReviewState, Run } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Chip, Confidence, Empty, Spinner, StatusChip } from "./bits";
+import { Chip, Confidence, Empty, Spinner, StatusChip, statusTone } from "./bits";
 import { EvidencePanel } from "./EvidencePanel";
 
 type Filter = "all" | "supported" | "partial" | "not_found" | "error" | "flagged" | "conflicts";
+type Order = "form" | "risk";
+
+/** Header is 52px and the panel pins directly beneath it. One constant so the
+ *  sticky offset and the available height cannot drift — they had, by 20px,
+ *  which left dead space at the foot of the panel. */
+const HEADER_H = 52;
 
 /** Guide coverage verdicts map onto the questionnaire's three, so filters,
  *  tallies and chips stay one code path. */
@@ -38,11 +44,27 @@ function normalisedStatus(item: Item, isGuide: boolean): string | undefined {
     : item.result.status;
 }
 
+/** Lower sorts first: unresolved conflicts, then failures, then withheld
+ *  quotes, then low confidence, then absences. */
+function riskRank(item: Item, isGuide: boolean): number {
+  const r = item.result;
+  if (!r) return 6;
+  if ((r.contradictions?.length ?? 0) > 0) return 0;
+  if (r.status === "error") return 1;
+  if ((r.discarded_quotes?.length ?? 0) > 0) return 2;
+  if (r.confidence < 40) return 3;
+  const s = normalisedStatus(item, isGuide);
+  if (s === "not_found") return 4;
+  if (s === "partial") return 5;
+  return 7;
+}
+
 export function RunView({ runId, onExit }: { runId: string; onExit: () => void }) {
   const [run, setRun] = useState<Run | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [order, setOrder] = useState<Order>("form");
   const [phase, setPhase] = useState("");
 
   // Every SSE merge goes through the functional form of setState, so the handler
@@ -133,22 +155,58 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
     return { counts, conflicts, flagged, accepted, answered };
   }, [run?.items, isGuide]);
 
-  const filtered = useMemo(() => {
+  /** The visible, ordered list. next/prev and the keyboard all walk this, so
+   *  navigation always agrees with what is on screen. */
+  const rows = useMemo(() => {
     if (!run) return [];
-    if (filter === "all") return run.items;
-    if (filter === "flagged") return run.items.filter((it) => it.review?.state === "flagged");
-    if (filter === "conflicts")
-      return run.items.filter((it) => (it.result?.contradictions?.length ?? 0) > 0);
-    return run.items.filter((it) => normalisedStatus(it, !!isGuide) === filter);
-  }, [run, filter, isGuide]);
+    let list = run.items;
+    if (filter === "flagged") list = list.filter((it) => it.review?.state === "flagged");
+    else if (filter === "conflicts")
+      list = list.filter((it) => (it.result?.contradictions?.length ?? 0) > 0);
+    else if (filter !== "all")
+      list = list.filter((it) => normalisedStatus(it, !!isGuide) === filter);
 
-  const selectedItem = useMemo(
-    () => run?.items.find((it) => itemKey(it, run.kind) === selected) ?? null,
-    [run, selected],
+    if (order === "risk") {
+      list = [...list].sort((a, b) => {
+        const d = riskRank(a, !!isGuide) - riskRank(b, !!isGuide);
+        return d !== 0 ? d : (a.result?.confidence ?? 0) - (b.result?.confidence ?? 0);
+      });
+    }
+    return list;
+  }, [run, filter, order, isGuide]);
+
+  const index = useMemo(
+    () => (run ? rows.findIndex((it) => itemKey(it, run.kind) === selected) : -1),
+    [rows, selected, run],
+  );
+  const selectedItem = index >= 0 ? rows[index] : null;
+
+  const go = useCallback(
+    (delta: number) => {
+      if (!run || rows.length === 0) return;
+      const next = index < 0 ? 0 : index + delta;
+      if (next < 0 || next >= rows.length) return;
+      setSelected(itemKey(rows[next], run.kind));
+    },
+    [index, rows, run],
   );
 
-  /** Replace one item after an interaction. Functional form again, so this stays
-   *  referentially stable and is safe to pass down. */
+  /** j/k and arrows walk the queue, Escape closes. Ignored while typing so the
+   *  ask and hint fields keep working. */
+  useEffect(() => {
+    if (!selected) return;
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); go(1); }
+      else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); go(-1); }
+      else if (e.key === "Escape") setSelected(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected, go]);
+
   const applyItem = useCallback((updated: Item) => {
     setRun((prev) =>
       prev
@@ -190,6 +248,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
 
   const { counts, conflicts, flagged, accepted, answered } = tally;
   const pct = run.total ? Math.round((answered / run.total) * 100) : 0;
+  const open = selectedItem !== null;
 
   const filters: [Filter, string][] = [
     ["all", `All ${run.items.length}`],
@@ -285,7 +344,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
       </div>
 
       {/* ------------------------------------------------ filters */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {filters.map(([key, label]) => (
           <Button
             key={key}
@@ -297,15 +356,89 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
             {label}
           </Button>
         ))}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto h-7 text-xs"
+          onClick={() => setOrder((o) => (o === "form" ? "risk" : "form"))}
+          title="Needs-attention order puts conflicts, failures and low confidence first"
+        >
+          <ArrowUpDown className="size-3.5" />
+          {order === "form"
+            ? isGuide
+              ? "Guide order"
+              : "Form order"
+            : "Needs attention first"}
+        </Button>
       </div>
 
-      {/* ------------------------------------------------ table + panel */}
+      {/* ------------------------------------------------ list + panel */}
       <Card
         className={`overflow-hidden p-0 ${
- selectedItem ? "grid grid-cols-1 items-start lg:grid-cols-[minmax(0,1fr)_460px]" : ""
+ open
+            ? "grid grid-cols-1 items-start lg:grid-cols-[minmax(250px,320px)_minmax(0,1fr)]"
+            : ""
         }`}
       >
-        <div className="min-w-0">
+        <div
+          className={
+            open
+              ? "min-w-0 lg:sticky lg:overflow-y-auto lg:border-r"
+              : "min-w-0"
+          }
+          style={
+            open
+              ? { top: HEADER_H, maxHeight: `calc(100vh - ${HEADER_H}px)` }
+              : undefined
+          }
+        >
+          {open ? (
+            /* Summary column: number, snippet, citation, status dot. Keeping six
+               columns and adding a panel left the question text ~220px of a
+               560px need, which overflowed into a nested scrollbar. */
+            <ul className="divide-y">
+              {rows.map((it) => {
+                const key = itemKey(it, run.kind);
+                const r = it.result;
+                const s = isGuide ? r?.coverage_status : r?.status;
+                const isSel = selected === key;
+                return (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(key)}
+                      className={`flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors ${
+                        isSel ? "bg-muted" : "hover:bg-muted/50"
+                      }`}
+                    >
+                      <span className="mt-px w-5 shrink-0 font-mono text-[11px] text-muted-foreground">
+                        {isGuide ? it.id?.replace("ob", "") : it.number}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-2 block text-[13px] leading-snug">
+                          {isGuide ? it.obligation : it.question}
+                        </span>
+                        {r?.citations?.[0] && (
+                          <span className="mt-1 block font-mono text-[10.5px] text-muted-foreground">
+                            {r.citations[0].cite}
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-1 flex shrink-0 items-center gap-1">
+                        {(r?.contradictions?.length ?? 0) > 0 && (
+                          <AlertTriangle className="size-3 text-[var(--status-partial-dot)]" />
+                        )}
+                        <span
+                          aria-label={String(s ?? "pending")}
+                          className={`inline-block size-2 rounded-full pill-${statusTone(s)}`}
+                        />
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
           <Table>
             {/* Header is deliberately not sticky. shadcn wraps Table in an
                 overflow-x-auto container, which becomes the containing block for
@@ -324,7 +457,7 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((it) => {
+              {rows.map((it) => {
                 const key = itemKey(it, run.kind);
                 const r = it.result;
                 const s = isGuide ? r?.coverage_status : r?.status;
@@ -425,7 +558,8 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
               })}
             </TableBody>
           </Table>
-          {filtered.length === 0 && (
+          )}
+          {rows.length === 0 && (
             <p className="px-6 py-12 text-center text-sm text-muted-foreground">
               Nothing matches this filter.
             </p>
@@ -439,6 +573,10 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
             key={itemKey(selectedItem, run.kind)}
             run={run}
             item={selectedItem}
+            position={{ index: index + 1, total: rows.length }}
+            headerOffset={HEADER_H}
+            onPrev={index > 0 ? () => go(-1) : undefined}
+            onNext={index < rows.length - 1 ? () => go(1) : undefined}
             onClose={() => setSelected(null)}
             onReview={handleReview}
             onItemChanged={applyItem}

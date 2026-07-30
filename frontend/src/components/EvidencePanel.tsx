@@ -3,6 +3,9 @@ import {
   AlertTriangle,
   ArrowRight,
   Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Flag,
   MessageCircleQuestion,
@@ -103,16 +106,28 @@ function CitationBlock({ citation }: { citation: Citation }) {
 export function EvidencePanel({
   run,
   item,
+  position,
+  headerOffset,
+  onPrev,
+  onNext,
   onClose,
   onReview,
   onItemChanged,
 }: {
   run: Run;
   item: Item;
+  /** 1-based place in the visible queue, for the "3 of 64" counter. */
+  position: { index: number; total: number };
+  headerOffset: number;
+  onPrev?: () => void;
+  onNext?: () => void;
   onClose: () => void;
   onReview: (state: ReviewState, note: string) => Promise<void>;
   onItemChanged: (item: Item) => void;
 }) {
+  /* Ask / redirect / swap are the rare path, so they start folded. Flat, they
+     took prime space above the decision she is actually here to make. */
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [note, setNote] = useState(item.review?.note ?? "");
   const [saving, setSaving] = useState<ReviewState | null>(null);
   const [question, setQuestion] = useState("");
@@ -192,14 +207,42 @@ export function EvidencePanel({
     : STATUS_LABEL[result?.status ?? "error"];
 
   return (
-    <aside className="lg:sticky lg:top-[52px] lg:max-h-[calc(100vh-72px)] lg:overflow-y-auto border-t lg:border-t-0 lg:border-l bg-card">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-card px-5 py-3">
-        <span className="label-1">
+    <aside
+      className="border-t bg-card lg:sticky lg:overflow-y-auto lg:border-t-0"
+      style={{ top: headerOffset, maxHeight: `calc(100vh - ${headerOffset}px)` }}
+    >
+      <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-5 py-2.5">
+        <span className="label-1 shrink-0">
           {isGuide ? `Obligation ${item.id}` : `Question ${item.number}`}
         </span>
-        <Button variant="ghost" size="icon" className="size-7" onClick={onClose}>
-          <X className="size-4" />
-        </Button>
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {position.index} of {position.total}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            disabled={!onPrev}
+            onClick={onPrev}
+            title="Previous (k)"
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            disabled={!onNext}
+            onClick={onNext}
+            title="Next (j)"
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="size-7" onClick={onClose} title="Close (Esc)">
+            <X className="size-4" />
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-5 px-5 py-5">
@@ -276,6 +319,20 @@ export function EvidencePanel({
 
             {result.citations.length > 0 && (
               <Field label={`Evidence (${result.citations.length})`}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mb-2 h-7 text-xs"
+                  onClick={() =>
+                    navigator.clipboard?.writeText(
+                      result.citations
+                        .map((c) => `"${c.quote.replace(/\s+/g, " ").trim()}" (${c.cite})`)
+                        .join("\n\n"),
+                    )
+                  }
+                >
+                  <Copy className="size-3" /> Copy quote + citation
+                </Button>
                 <div className="mt-1.5">
                   {result.citations.map((c, i) => (
                     <CitationBlock key={i} citation={c} />
@@ -283,6 +340,9 @@ export function EvidencePanel({
                 </div>
               </Field>
             )}
+
+            <Separator />
+            <p className="label-1">Why you might not trust it</p>
 
             {result.reasoning && (
               <Field label="How this maps to the obligation">{result.reasoning}</Field>
@@ -395,8 +455,22 @@ export function EvidencePanel({
           </div>
         )}
 
-        {/* ---------------- ask ---------------- */}
+        {/* ---------------- change it (folded: the rare path) ------------- */}
         <Separator />
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          aria-expanded={advancedOpen}
+          className="flex items-center gap-1.5 text-left text-[13px] font-medium text-foreground"
+        >
+          <ChevronDown
+            className={`size-4 transition-transform ${advancedOpen ? "" : "-rotate-90"}`}
+          />
+          Disagree, ask, or change the citation
+        </button>
+
+        {advancedOpen && (
+        <>
         <Field label="Ask about this answer">
           <div className="flex gap-2">
             <Input
@@ -475,6 +549,9 @@ export function EvidencePanel({
               can be verified, it is rejected rather than shown.
             </p>
           </Field>
+        )}
+
+        </>
         )}
 
         {/* ---------------- decision ---------------- */}
