@@ -341,12 +341,43 @@
   }
   .pill-info > .dot { background: var(--status-info-dot); }
 
-  /* Quoted policy text. Monospaced so the reader sees it exactly as written —
-     these strings are checked character-for-character. */
+  /* Quoted policy text.
+     No coloured left bar: the verification chip directly above already states
+     whether the quote was found in the source, so the bar was saying the same
+     thing twice and shouting it. A recessed panel with a hairline and a hanging
+     quote glyph reads as lifted text without competing for attention. */
   .quote-block {
-    @apply font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap
-           break-words rounded-md border border-l-2 bg-white px-3.5 py-3;
+    @apply relative rounded-md border bg-muted/60 py-3 pl-9 pr-4
+           text-[13.5px] leading-relaxed text-foreground;
   }
+  .quote-block::before {
+    content: "\201C";
+    position: absolute;
+    left: 10px;
+    top: 2px;
+    font-family: var(--font-display);
+    font-size: 28px;
+    line-height: 1;
+    color: var(--slate-300);
+    pointer-events: none;
+  }
+  /* Tone rides the surface, not a bar — used where the quote itself is the
+     warning (conflicting language) rather than the evidence. */
+  .quote-warn {
+    background: var(--status-partial-bg);
+    border-color: var(--status-partial-border);
+  }
+  .quote-warn::before { color: var(--status-partial-dot); opacity: 0.45; }
+  .quote-danger {
+    background: var(--status-not-met-bg);
+    border-color: var(--status-not-met-border);
+  }
+  .quote-danger::before { color: var(--status-not-met-dot); opacity: 0.45; }
+  .quote-info {
+    background: var(--status-info-bg);
+    border-color: var(--status-info-border);
+  }
+  .quote-info::before { color: var(--status-info-dot); opacity: 0.5; }
 }
 
 @layer components {

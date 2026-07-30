@@ -175,8 +175,13 @@ export function Banner({
   return <div className={cn("banner", `banner-${tone}`, className)}>{children}</div>;
 }
 
-/** Quoted policy text. Monospaced so the reader sees it exactly as written —
- *  these strings are checked character-for-character. */
+/** Quoted policy text.
+ *
+ *  Hard line breaks in these strings come from the PDF's column layout, not
+ *  from the document's wording — rendering them verbatim made quotes look
+ *  broken mid-sentence. Runs of whitespace are collapsed for display only; the
+ *  words are untouched, the stored quote is unchanged, and "Read in context"
+ *  still shows the true page. */
 export function Quote({
   children,
   tone = "met",
@@ -186,11 +191,13 @@ export function Quote({
   tone?: "met" | "partial" | "not-met" | "info";
   className?: string;
 }) {
-  const border = {
-    met: "border-l-[var(--status-met-dot)]",
-    partial: "border-l-[var(--status-partial-dot)]",
-    "not-met": "border-l-[var(--status-not-met-dot)]",
-    info: "border-l-[var(--status-info-dot)]",
+  const surface = {
+    met: "",
+    partial: "quote-warn",
+    "not-met": "quote-danger",
+    info: "quote-info",
   }[tone];
-  return <div className={cn("quote-block", border, className)}>{children}</div>;
+  const text =
+    typeof children === "string" ? children.replace(/\s+/g, " ").trim() : children;
+  return <div className={cn("quote-block", surface, className)}>{text}</div>;
 }
