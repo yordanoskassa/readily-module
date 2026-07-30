@@ -139,6 +139,11 @@ def build_match(text: str, phrase: bool = False) -> str:
     tokenise ourselves and re-quote every term. `phrase=True` produces a
     NEAR-ish exact phrase; otherwise terms are OR'd and bm25 does the
     ranking.
+
+    Returns `""` when the input contains no searchable term at all (e.g. pure
+    punctuation). **An empty string is not a valid MATCH expression** — callers
+    must treat it as "no results" and skip the query rather than executing it.
+    `fts_query` below enforces that; prefer it over hand-rolling the SELECT.
     """
     toks = fts_tokens(text)
     if not toks:
@@ -150,3 +155,17 @@ def build_match(text: str, phrase: bool = False) -> str:
         # Keep phrases tolerant of the line-wrap noise in PDF text.
         return f"NEAR({' '.join(quoted)}, 12)"
     return " OR ".join(quoted)
+
+
+def fts_query(
+    conn: sqlite3.Connection, sql: str, match: str, params: tuple = ()
+) -> list[sqlite3.Row]:
+    """Run an FTS query, short-circuiting when there is nothing to search for.
+
+    Centralises the empty-`build_match` guard so a query built from arbitrary
+    text (an LLM-generated term list, a user's search box) can never reach
+    SQLite as a malformed MATCH expression.
+    """
+    if not match.strip():
+        return []
+    return conn.execute(sql, (match, *params)).fetchall()
