@@ -244,22 +244,44 @@ reviewer."""
 
 
 async def assess_coverage(ob: Obligation) -> dict:
-    """Run one obligation through retrieval + assessment against the P&Ps."""
-    from .retrieval import retrieve
-    from .verify import assess_evidence
+    """Run one obligation through retrieval + assessment against the P&Ps.
 
+    Whole-document mode matters more here than on the questionnaire: the output
+    of this pass is a *gap list*, and a gap is asserted from absence. If lexical
+    retrieval misses the policy that already covers an obligation, the run tells
+    her to draft language she does not need — a false gap costs her more than a
+    missed citation.
+    """
     question = (
         f"Do the plan's Policies and Procedures state the following obligation "
         f"from the Policy Guide? {ob.obligation}"
     )
-    expansion, passages = await retrieve(question)
-    assessment = await assess_evidence(question, ob.obligation, passages)
+
+    if get_settings().whole_document_mode:
+        from .retrieval import retrieve_documents
+        from .verify import assess_evidence_documents
+
+        expansion, docs = await retrieve_documents(question)
+        assessment = await assess_evidence_documents(question, ob.obligation, docs)
+        candidates = [
+            {"cite": f"{d.policy_code} pp. 1-{d.n_pages}", "title": d.title,
+             "score": d.score}
+            for d in docs[:5]
+        ]
+    else:
+        from .retrieval import retrieve
+        from .verify import assess_evidence
+
+        expansion, passages = await retrieve(question)
+        assessment = await assess_evidence(question, ob.obligation, passages)
+        candidates = [
+            {"cite": p.cite(), "title": p.title, "score": p.score}
+            for p in passages[:5]
+        ]
 
     status_map = {"supported": "covered", "partial": "partial", "not_found": "gap"}
     result = assessment.to_dict()
     result["coverage_status"] = status_map.get(assessment.status, "gap")
-    result["candidates"] = [
-        {"cite": p.cite(), "title": p.title, "score": p.score} for p in passages[:5]
-    ]
+    result["candidates"] = candidates
     result["plan_synonyms"] = expansion.plan_synonyms
     return result

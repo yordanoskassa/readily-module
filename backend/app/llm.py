@@ -28,6 +28,25 @@ _warmed: set[str] = set()
 _warm_lock: asyncio.Lock | None = None
 
 
+# Running token totals for the process. Whole-document mode trades input tokens
+# for recall, so the size of that trade has to be observable rather than
+# estimated from character counts.
+USAGE: dict[str, int] = {
+    "calls": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0,
+}
+
+
+def _record_usage(message) -> None:
+    u = getattr(message, "usage", None)
+    if u is None:
+        return
+    USAGE["calls"] += 1
+    USAGE["input"] += getattr(u, "input_tokens", 0) or 0
+    USAGE["output"] += getattr(u, "output_tokens", 0) or 0
+    USAGE["cache_read"] += getattr(u, "cache_read_input_tokens", 0) or 0
+    USAGE["cache_write"] += getattr(u, "cache_creation_input_tokens", 0) or 0
+
+
 class LLMError(RuntimeError):
     pass
 
@@ -112,6 +131,8 @@ async def structured(
         # Stream so a long generation cannot trip the HTTP idle timeout.
         async with api.messages.stream(**request) as stream:
             message = await stream.get_final_message()
+
+        _record_usage(message)
 
         if message.stop_reason == "refusal":
             raise LLMError(

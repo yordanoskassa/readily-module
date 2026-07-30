@@ -23,8 +23,22 @@ from __future__ import annotations
 from . import llm
 from .config import get_settings
 from .db import session
-from .retrieval import Passage, retrieve
-from .verify import Citation, assess_evidence, contradiction_sweep, verify_quote
+from .retrieval import (
+    Passage,
+    document_candidates,
+    load_documents,
+    passage_candidates,
+    retrieve,
+    retrieve_documents,
+)
+from .verify import (
+    Citation,
+    assess_evidence,
+    assess_evidence_documents,
+    contradiction_sweep,
+    locate_quote,
+    verify_quote,
+)
 
 # --------------------------------------------------------------------------
 # ask — scoped follow-up
@@ -58,8 +72,9 @@ You are answering a follow-up question from a compliance analyst reviewing one \
 item of a DHCS submission. She is looking at a recorded verdict and its cited \
 evidence and wants something clarified.
 
-Answer only from the passages provided. These are the passages that were \
-retrieved for this item, plus the current verdict. If the passages do not \
+Answer only from the evidence provided. That evidence is what was retrieved for \
+this item — either numbered passages or complete numbered policy documents — \
+plus the current verdict. Refer to it by its number either way. If it does not \
 settle her question, say so directly and name what document or section would — \
 do not speculate, and do not pad the answer to seem helpful.
 
@@ -119,30 +134,46 @@ def _passages_from_chunk_ids(chunk_ids: list[int]) -> list[Passage]:
 
 
 async def ask(item: dict, question: str) -> dict:
-    """Answer a follow-up using the passages already on the item."""
+    """Answer a follow-up using the evidence already on the item.
+
+    Whichever unit the verdict was formed from is the unit her follow-up is
+    answered against — whole documents when the batch ran in document mode,
+    passages otherwise. Answering "why didn't you cite X" from a narrower slice
+    of evidence than the verdict used would make the answer misleading.
+    """
     s = get_settings()
     result = item.get("result") or {}
+    asked_about = item.get("question") or item.get("obligation") or ""
+    verdict = result.get("coverage_status") or result.get("status") or "unknown"
 
-    # Reuse what the batch retrieved — cited passages first, then the runners-up
-    # already shown in the panel. No new search, so this stays a single call.
-    chunk_ids: list[int] = []
-    for c in result.get("citations") or []:
-        if c.get("chunk_id"):
-            chunk_ids.append(c["chunk_id"])
-    for c in result.get("candidates") or []:
-        if c.get("chunk_id") and c["chunk_id"] not in chunk_ids:
-            chunk_ids.append(c["chunk_id"])
-    passages = _passages_from_chunk_ids(chunk_ids[:10])
+    docs = load_documents(result.get("context_docs") or [])
+    if docs:
+        evidence_label = "COMPLETE POLICY DOCUMENTS"
+        rendered = "\n\n".join(
+            f"===== DOCUMENT [{i}] =====\n{d.render()}"
+            for i, d in enumerate(docs, start=1)
+        )
+        passages = []
+    else:
+        # Reuse what the batch retrieved — cited passages first, then the
+        # runners-up already shown in the panel. No new search, one call.
+        chunk_ids: list[int] = []
+        for c in result.get("citations") or []:
+            if c.get("chunk_id"):
+                chunk_ids.append(c["chunk_id"])
+        for c in result.get("candidates") or []:
+            if c.get("chunk_id") and c["chunk_id"] not in chunk_ids:
+                chunk_ids.append(c["chunk_id"])
+        passages = _passages_from_chunk_ids(chunk_ids[:10])
+        evidence_label = "PASSAGES"
+        rendered = _render(passages)
 
-    if not passages:
+    if not docs and not passages:
         return {
-            "answer": "There are no retrieved passages on this item to reason "
+            "answer": "There is no retrieved evidence on this item to reason "
                       "about. Re-run it first.",
             "quotes": [], "changes_verdict": False,
         }
-
-    asked_about = item.get("question") or item.get("obligation") or ""
-    verdict = result.get("coverage_status") or result.get("status") or "unknown"
 
     try:
         data = await llm.structured(
@@ -152,7 +183,7 @@ async def ask(item: dict, question: str) -> dict:
                 f"RECORDED VERDICT: {verdict} (confidence {result.get('confidence', 0)})\n"
                 f"RECORDED REASONING: {result.get('reasoning', '') or '—'}\n\n"
                 f"HER QUESTION\n{question}\n\n"
-                f"PASSAGES\n\n{_render(passages)}"
+                f"{evidence_label}\n\n{rendered}"
             ),
             schema=ASK_SCHEMA,
             model=s.model_reasoning,
@@ -164,19 +195,34 @@ async def ask(item: dict, question: str) -> dict:
         return {"answer": f"Could not answer: {exc}", "quotes": [],
                 "changes_verdict": False}
 
-    by_id = {i: p for i, p in enumerate(passages, start=1)}
     quotes = []
-    for raw in data.get("quotes") or []:
-        p = by_id.get(raw.get("passage_id"))
-        if not p:
-            continue
-        check = verify_quote(raw.get("quote") or "", p.text)
-        if check.verified:
-            quotes.append({
-                "quote": check.matched_text, "cite": p.cite(),
-                "policy_code": p.policy_code, "doc_id": p.doc_id,
-                "page_start": p.page_start, "page_end": p.page_end,
-            })
+    if docs:
+        by_doc = {i: d for i, d in enumerate(docs, start=1)}
+        for raw in data.get("quotes") or []:
+            d = by_doc.get(raw.get("passage_id"))
+            if not d:
+                continue
+            loc = locate_quote(raw.get("quote") or "", d)
+            if loc.check.verified:
+                quotes.append({
+                    "quote": loc.check.matched_text,
+                    "cite": f"{d.policy_code} p. {loc.page_start}",
+                    "policy_code": d.policy_code, "doc_id": d.doc_id,
+                    "page_start": loc.page_start, "page_end": loc.page_end,
+                })
+    else:
+        by_id = {i: p for i, p in enumerate(passages, start=1)}
+        for raw in data.get("quotes") or []:
+            p = by_id.get(raw.get("passage_id"))
+            if not p:
+                continue
+            check = verify_quote(raw.get("quote") or "", p.text)
+            if check.verified:
+                quotes.append({
+                    "quote": check.matched_text, "cite": p.cite(),
+                    "policy_code": p.policy_code, "doc_id": p.doc_id,
+                    "page_start": p.page_start, "page_end": p.page_end,
+                })
 
     return {
         "answer": data.get("answer") or "",
@@ -194,8 +240,21 @@ async def rerun(item: dict, hint: str = "", policies: list[str] | None = None) -
     text = item.get("question") or item.get("obligation") or ""
     is_guide = "obligation" in item and "question" not in item
 
-    expansion, passages = await retrieve(text, hint=hint, only_policies=policies)
-    assessment = await assess_evidence(text, expansion.obligation, passages)
+    # A steered re-run has to use the same evidence unit as the batch, or her
+    # redirect would be evaluated against different material than the verdict
+    # she is disagreeing with.
+    if get_settings().whole_document_mode:
+        expansion, docs = await retrieve_documents(
+            text, hint=hint, only_policies=policies
+        )
+        assessment = await assess_evidence_documents(text, expansion.obligation, docs)
+        candidates = _document_candidates(docs)
+        context_docs = [d.doc_id for d in docs]
+    else:
+        expansion, passages = await retrieve(text, hint=hint, only_policies=policies)
+        assessment = await assess_evidence(text, expansion.obligation, passages)
+        candidates = _passage_candidates(passages)
+        context_docs = []
 
     if assessment.citations:
         assessment.contradictions = await contradiction_sweep(
@@ -206,15 +265,10 @@ async def rerun(item: dict, hint: str = "", policies: list[str] | None = None) -
     result["obligation"] = expansion.obligation
     result["plan_synonyms"] = expansion.plan_synonyms
     result["regulator_terms"] = expansion.regulator_terms
-    result["candidates"] = [
-        {
-            "cite": p.cite(), "policy_code": p.policy_code, "title": p.title,
-            "doc_id": p.doc_id, "chunk_id": p.chunk_id, "page_start": p.page_start,
-            "page_end": p.page_end, "heading": p.heading, "score": p.score,
-            "excerpt": p.text[:600],
-        }
-        for p in passages[:6]
-    ]
+    result["evidence_mode"] = "documents" if context_docs else "passages"
+    result["candidates"] = candidates
+    if context_docs:
+        result["context_docs"] = context_docs
     # Record the steer so the audit trail shows this answer was directed.
     result["steered"] = {
         "hint": hint or "", "policies": policies or [],

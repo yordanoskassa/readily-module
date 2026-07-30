@@ -22,7 +22,12 @@ from . import llm
 from .config import get_settings
 from .db import session
 from .questionnaire import parse_questions
-from .retrieval import chunks_in_range, retrieve, retrieve_documents
+from .retrieval import (
+    document_candidates,
+    passage_candidates,
+    retrieve,
+    retrieve_documents,
+)
 from .verify import assess_evidence, assess_evidence_documents, contradiction_sweep
 
 RunKind = Literal["questionnaire", "guide"]
@@ -201,48 +206,13 @@ async def _answer_question(q: dict) -> dict:
     result["evidence_mode"] = "documents" if docs else "passages"
     # Keep the runners-up so a rejected answer still gives her somewhere to look.
     result["candidates"] = (
-        _document_candidates(docs) if docs else _passage_candidates(passages)
+        document_candidates(docs) if docs else passage_candidates(passages)
     )
     if docs:
         # Which whole policies were in context, so a follow-up question can be
         # answered against the same evidence the verdict was formed from.
         result["context_docs"] = [d.doc_id for d in docs]
     return result
-
-
-def _passage_candidates(passages: list) -> list[dict]:
-    return [
-        {
-            "cite": p.cite(), "policy_code": p.policy_code, "title": p.title,
-            "doc_id": p.doc_id, "chunk_id": p.chunk_id, "page_start": p.page_start,
-            "page_end": p.page_end, "heading": p.heading, "score": p.score,
-            "excerpt": p.text[:600],
-        }
-        for p in passages[:6]
-    ]
-
-
-def _document_candidates(docs: list) -> list[dict]:
-    """The shortlisted policies, as the panel's "other places to look" list.
-
-    `chunk_id` points at the document's first chunk so the UI's citation-swap
-    still has something to act on; the analyst is choosing a *policy* here, and
-    the swap re-selects the operative sentence from it.
-    """
-    out = []
-    for d in docs[:6]:
-        first = chunks_in_range(d.doc_id, 1, d.n_pages or 1)
-        out.append({
-            "cite": f"{d.policy_code} pp. 1-{d.n_pages}",
-            "policy_code": d.policy_code, "title": d.title,
-            "doc_id": d.doc_id,
-            "chunk_id": first[0]["id"] if first else 0,
-            "page_start": 1, "page_end": d.n_pages,
-            "heading": f"whole policy · {d.n_pages} pages · ~{d.est_tokens} tokens",
-            "score": d.score,
-            "excerpt": (d.pages[0][1] if d.pages else "")[:600],
-        })
-    return out
 
 
 def _blank_item(q: dict) -> dict:

@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # tokens but AA.1000 is ~66k, so a fixed document count has a 10x spread.
     doc_context_max: int = 8
     doc_context_token_budget: int = 150_000
+    # No single document below the top rank may take more than this share of the
+    # budget. Without it one outsized document (AA.1000, the 66k-token Medi-Cal
+    # Glossary, ranks well on any query because it contains every term in the
+    # corpus) crowds out several real policies while being unable to state an
+    # obligation itself. Expressed as a share rather than a title rule so it
+    # generalises to any oversized reference document.
+    doc_context_max_share: float = 0.35
 
     @property
     def whole_document_mode(self) -> bool:

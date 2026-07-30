@@ -179,6 +179,37 @@ ORDER BY score
 LIMIT ?
 """
 
+# Document ranking by *density* rather than best single passage: the mean of a
+# document's three best chunks.
+#
+# Best-passage ranking (_DOC_SQL) is right when the unit sent to the model is a
+# passage — one strong chunk is exactly what gets sent. It is wrong when the unit
+# is the whole document, because a glossary contains one matching line for every
+# term in the corpus and so ranks near the top of every query. Measured on a
+# hospice question, AA.1000 (Medi-Cal Glossary, 66k tokens) and MA.1001 (OneCare
+# Glossary, 41k) took 72% of the context budget and crowded out real policies.
+#
+# Requiring three good chunks demotes a document that merely mentions the topic
+# in favour of one that is about it. bm25 is negative, so lower is better.
+_DOC_DENSITY_SQL = """
+SELECT doc_id, AVG(score) AS best FROM (
+    SELECT doc_id, score,
+           ROW_NUMBER() OVER (PARTITION BY doc_id ORDER BY score) AS rn
+    FROM (
+        SELECT ch.doc_id AS doc_id, bm25(chunks_fts) AS score
+        FROM chunks_fts
+        JOIN chunks ch ON ch.id = chunks_fts.rowid
+        WHERE chunks_fts MATCH ?
+        ORDER BY score
+        LIMIT 400
+    )
+)
+WHERE rn <= 3
+GROUP BY doc_id
+ORDER BY best
+LIMIT ?
+"""
+
 
 @dataclass
 class Passage:
@@ -235,22 +266,28 @@ def _hydrate(conn, chunk_ids: list[int], scores: dict[int, float]) -> list[Passa
 
 
 def _rank_documents(
-    conn, phrasings: list[str], topics: list[str] | None = None
+    conn,
+    phrasings: list[str],
+    topics: list[str] | None = None,
+    density: bool = False,
 ) -> dict[int, float]:
     """Fused document-level ranking: which P&Ps could own this obligation.
 
-    Kept separate from passage ranking because both evidence modes need it —
-    passage mode uses it to boost, document mode uses it as the whole answer.
+    Both evidence modes need it — passage mode uses it to boost, document mode
+    uses it as the whole answer. `density=True` selects the ranking suited to
+    sending whole documents (see `_DOC_DENSITY_SQL`); passage mode keeps
+    best-passage ranking so its measured behaviour is unchanged.
     """
     s = get_settings()
+    sql = _DOC_DENSITY_SQL if density else _DOC_SQL
     rankings: list[list[int]] = []
     for phrasing in phrasings:
-        rows = fts_query(conn, _DOC_SQL, build_match(phrasing), (s.doc_candidates,))
+        rows = fts_query(conn, sql, build_match(phrasing), (s.doc_candidates,))
         rankings.append([r["doc_id"] for r in rows])
     # Topic hints search titles, which is how a human finds the right policy
     # when the body text does not use the regulator's words.
     for topic in (topics or [])[:5]:
-        rows = fts_query(conn, _DOC_SQL, build_match(topic), (s.doc_candidates,))
+        rows = fts_query(conn, sql, build_match(topic), (s.doc_candidates,))
         rankings.append([r["doc_id"] for r in rows])
     return reciprocal_rank_fuse(rankings)
 
@@ -494,12 +531,12 @@ def search_documents(
             else:
                 ranked = [
                     d for d, _ in sorted(
-                        _rank_documents(conn, phrasings, topics).items(),
+                        _rank_documents(conn, phrasings, topics, density=True).items(),
                         key=lambda kv: -kv[1],
                     )
                 ]
         else:
-            scores = _rank_documents(conn, phrasings, topics)
+            scores = _rank_documents(conn, phrasings, topics, density=True)
             ranked = [d for d, _ in sorted(scores.items(), key=lambda kv: -kv[1])]
 
     if not ranked:
@@ -508,13 +545,16 @@ def search_documents(
     # Hydrate a little beyond max_docs so the budget can skip an oversized
     # policy and still fill the slot with the next one down.
     bundles = load_documents(ranked[: max_docs * 3])
+    per_doc_cap = int(token_budget * s.doc_context_max_share)
     chosen: list[DocumentBundle] = []
     spent = 0
     for i, b in enumerate(bundles):
         if len(chosen) >= max_docs:
             break
         cost = b.est_tokens
-        if chosen and spent + cost > token_budget:
+        # The top-ranked document is always sent, however large — if retrieval is
+        # that confident, size is not a reason to withhold the likely answer.
+        if chosen and (cost > per_doc_cap or spent + cost > token_budget):
             continue
         b.score = round(1.0 / (RRF_K + i + 1), 6)
         chosen.append(b)
@@ -553,6 +593,46 @@ async def retrieve_documents(
         search_documents, phrasings, expansion.likely_topics, only_policies
     )
     return expansion, docs
+
+
+# --------------------------------------------------------------------------
+# Candidate lists for the review panel
+# --------------------------------------------------------------------------
+
+def passage_candidates(passages: list[Passage]) -> list[dict]:
+    """Runners-up, so a verdict she rejects still gives her somewhere to look."""
+    return [
+        {
+            "cite": p.cite(), "policy_code": p.policy_code, "title": p.title,
+            "doc_id": p.doc_id, "chunk_id": p.chunk_id, "page_start": p.page_start,
+            "page_end": p.page_end, "heading": p.heading, "score": p.score,
+            "excerpt": p.text[:600],
+        }
+        for p in passages[:6]
+    ]
+
+
+def document_candidates(docs: list[DocumentBundle]) -> list[dict]:
+    """The shortlisted policies, as the panel's "other places to look" list.
+
+    `chunk_id` points at the document's first chunk so the UI's citation-swap
+    still has something to act on — she is choosing a *policy* here, and the
+    swap then re-selects the operative sentence from it.
+    """
+    out: list[dict] = []
+    for d in docs[:6]:
+        first = chunks_in_range(d.doc_id, 1, d.n_pages or 1)
+        out.append({
+            "cite": f"{d.policy_code} pp. 1-{d.n_pages}",
+            "policy_code": d.policy_code, "title": d.title,
+            "doc_id": d.doc_id,
+            "chunk_id": first[0]["id"] if first else 0,
+            "page_start": 1, "page_end": d.n_pages,
+            "heading": f"whole policy · {d.n_pages} pages · ~{d.est_tokens} tokens",
+            "score": d.score,
+            "excerpt": (d.pages[0][1] if d.pages else "")[:600],
+        })
+    return out
 
 
 def keyword_search(query: str, limit: int = 25) -> list[Passage]:
