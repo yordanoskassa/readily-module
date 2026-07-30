@@ -168,15 +168,17 @@ def _resolve_source(sample: str | None) -> Path:
     return path
 
 
+# These must be `async def`. A sync handler runs in FastAPI's threadpool, where
+# there is no running event loop for the background task to be scheduled on.
 @app.post("/api/runs/questionnaire")
-def start_questionnaire(body: StartRun) -> dict:
+async def start_questionnaire(body: StartRun) -> dict:
     path = _resolve_source(body.sample)
-    run = runs_mod.start_questionnaire_run(path, path.name, limit=body.limit)
+    run = await runs_mod.start_questionnaire_run(path, path.name, body.limit)
     return run.to_dict()
 
 
 @app.post("/api/runs/guide")
-def start_guide(body: StartRun) -> dict:
+async def start_guide(body: StartRun) -> dict:
     path = _resolve_source(body.sample)
     run = runs_mod.start_guide_run(path, path.name)
     return run.to_dict()
@@ -196,7 +198,7 @@ async def upload(kind: str, file: UploadFile, limit: int | None = None) -> dict:
         shutil.copyfileobj(file.file, fh)
 
     if kind == "questionnaire":
-        run = runs_mod.start_questionnaire_run(target, target.name, limit=limit)
+        run = await runs_mod.start_questionnaire_run(target, target.name, limit)
     else:
         run = runs_mod.start_guide_run(target, target.name)
     return run.to_dict()

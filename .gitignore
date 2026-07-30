@@ -20,3 +20,6 @@ data/index.db-shm
 
 # os
 .DS_Store
+
+# vite build output is produced in the Docker image
+frontend/dist/

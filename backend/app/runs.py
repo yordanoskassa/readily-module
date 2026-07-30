@@ -299,8 +299,16 @@ async def _drive(run: Run, coro) -> None:
         STORE.publish(run.id, {"type": "done", "run": run.summary()})
 
 
-def start_questionnaire_run(pdf_path: Path, source_name: str, limit: int | None = None) -> Run:
-    title, questions = parse_questions(pdf_path)
+async def start_questionnaire_run(
+    pdf_path: Path, source_name: str, limit: int | None = None
+) -> Run:
+    """Parse the form, then schedule the answering work on the event loop.
+
+    Async because `asyncio.create_task` below needs a running loop — a sync
+    handler would run in FastAPI's threadpool where there is none. The PDF parse
+    is pushed to a thread so it does not block the loop.
+    """
+    title, questions = await asyncio.to_thread(parse_questions, pdf_path)
     items = [
         {"number": q.number, "text": q.text, "reference": q.reference,
          "form_page": q.form_page}
