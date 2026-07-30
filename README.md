@@ -213,17 +213,62 @@ Tests (no API key needed — the verification layer is pure text matching):
 cd backend && .venv/bin/python -m pytest      # 50 tests
 ```
 
-### Deploying
+### Deploying to EasyPanel
 
-Single container; the FastAPI app serves the built React bundle. `PORT` is honoured, so on
-EasyPanel point a service at this repo, let it build the `Dockerfile`, and set
-`ANTHROPIC_API_KEY` as an environment variable.
+One container. FastAPI serves the built React bundle, so there is no separate
+frontend service and no proxy to configure.
 
-> **Note:** the `Dockerfile` has not been built and run — no container runtime was available
-> on the machine where this was written. Each step it performs was verified individually
-> (`npm ci`/`npm run build`, `pip install`, the `backend.app.main:app` import path from the
-> repo root, `PORT` handling, and that `data/` is writable by the non-root user because runs
-> persist into `index.db`). The first build is untested.
+1. **Create an App** and point it at `github.com/yordanoskassa/readily-module`,
+   branch `main`, build method **Dockerfile**.
+2. **Environment** — set one variable:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-...
+   ```
+   Everything else has a working default. `PORT` is injected by EasyPanel and
+   honoured by the entrypoint.
+3. **Port** — `8000` (or leave EasyPanel's `PORT` to override it).
+4. **Health check** — `GET /api/health`. The image also declares its own
+   `HEALTHCHECK`.
+5. **Volume (optional)** — mount at `/app/data` if runs should survive a
+   redeploy. The image seeds that directory on first start, so mounting a volume
+   is safe and mounting nothing is safe too.
+
+**Why the seed step exists.** The searchable index is baked in at `/app/seed`,
+not `/app/data`. A volume mounted at `/app/data` shadows whatever the image had
+there — so shipping the index at the mount point would mean that attaching a
+volume, the one thing you would attach it for, silently leaves the app with an
+empty corpus and zero policies. `docker-entrypoint.sh` copies the seed across
+only when `index.db` is absent, so:
+
+| | first start | later starts |
+|---|---|---|
+| no volume | seeded from image | seeded again; runs are ephemeral |
+| volume at `/app/data` | seeded once | untouched; runs persist |
+
+**What is in the image.** `index.db` (~34MB) carries all 373 policies as text
+plus the two completed demo runs, so the deployed app shows real results on
+first load with no API key and no waiting. The source corpus PDFs are not
+shipped — nothing at runtime reads them.
+
+Locally the same image runs with:
+
+```bash
+docker build -t readily-module .
+docker run --rm -p 8000:8000 -e ANTHROPIC_API_KEY=sk-ant-... readily-module
+```
+
+> **Not yet built.** No container runtime was available on the machine this was
+> written on, so `docker build` has never run. Every step it performs was
+> replayed by hand against a clean `git archive HEAD` checkout — `npm ci` from
+> the committed lockfile (reproducing byte-identical bundle hashes), `pip
+> install`, the `backend.app.main:app` import from the repo root, serving the
+> built bundle with all API routes returning 200, the healthcheck command
+> verbatim, `.dockerignore` against every `COPY`, and the entrypoint's three
+> seeding cases. The lockfile was also checked for the Linux musl binaries
+> (`@rollup/rollup-linux-x64-musl`, `@esbuild/linux-x64`) that are the usual
+> cause of `npm ci` failing on Alpine. What remains untested is only what needs
+> a daemon: the base images pulling, `useradd` on the slim image, and the
+> cross-stage `COPY --from=web`.
 
 ---
 
