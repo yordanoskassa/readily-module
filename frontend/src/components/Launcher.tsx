@@ -19,8 +19,8 @@ export function Launcher({
 }: {
   kind: "questionnaire" | "guide";
   health: Health | null;
-  onStarted: (runId: string) => void;
-  onOpen: (runId: string) => void;
+  onStarted: (runId: string, summary?: RunSummary) => void;
+  onOpen: (runId: string, summary?: RunSummary) => void;
 }) {
   const [samples, setSamples] = useState<Sample[] | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -62,7 +62,7 @@ export function Launcher({
         const run = isQ
           ? await api.startQuestionnaire(sample, parsedLimit)
           : await api.startGuideLimited(sample, parsedLimit);
-        onStarted(run.id);
+        onStarted(run.id, run);
       } catch (e: any) {
         setError(String(e.message ?? e));
       } finally {
@@ -77,7 +77,8 @@ export function Launcher({
       setBusy(true);
       setError("");
       try {
-        onStarted((await api.upload(kind, file, parsedLimit)).id);
+        const run = await api.upload(kind, file, parsedLimit);
+        onStarted(run.id, run);
       } catch (e: any) {
         setError(String(e.message ?? e));
       } finally {
@@ -219,8 +220,8 @@ export function Launcher({
                 key={r.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => onOpen(r.id)}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onOpen(r.id)}
+                onClick={() => onOpen(r.id, r)}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onOpen(r.id, r)}
                 className="flex cursor-pointer items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/60"
               >
                 <div className="min-w-0 flex-1">

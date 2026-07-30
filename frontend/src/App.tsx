@@ -1,28 +1,35 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import type { Health } from "@/lib/api";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { Health, RunSummary } from "@/lib/api";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Corpus } from "./components/Corpus";
 import { Launcher } from "./components/Launcher";
 import { RunView } from "./components/RunView";
+import { Shell } from "./components/Shell";
+import type { Section } from "./components/Shell";
 
-type Tab = "questionnaire" | "guide" | "corpus";
+/** Section → the module kind it drives. `policies` has no runs of its own. */
+const KIND: Record<Section, "questionnaire" | "guide" | null> = {
+  audit: "questionnaire",
+  change: "guide",
+  policies: null,
+};
 
-const TABS: [Tab, string][] = [
-  ["questionnaire", "Submission forms"],
-  ["guide", "Policy guides"],
-  ["corpus", "Policy library"],
-];
+const CRUMB: Record<Section, string[]> = {
+  audit: ["Work", "Audit Review"],
+  change: ["Work", "Regulatory Change"],
+  policies: ["Library", "Policies"],
+};
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("questionnaire");
+  const [section, setSection] = useState<Section>("audit");
   const [health, setHealth] = useState<Health | null>(null);
-  // One open run per module, so switching tabs does not lose your place.
+  // One open run per module, so moving between sections keeps your place.
   const [openRun, setOpenRun] = useState<Record<string, string | null>>({
-    questionnaire: null,
-    guide: null,
+    audit: null,
+    change: null,
   });
+  const [runTitle, setRunTitle] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let live = true;
@@ -35,70 +42,62 @@ export default function App() {
     };
   }, []);
 
-  const openInTab = useCallback(
-    (id: string) => setOpenRun((prev) => ({ ...prev, [tab]: id })),
-    [tab],
+  const openInSection = useCallback(
+    (id: string, summary?: RunSummary) => {
+      setOpenRun((prev) => ({ ...prev, [section]: id }));
+      if (summary?.source_name) {
+        setRunTitle((prev) => ({ ...prev, [id]: summary.source_name }));
+      }
+    },
+    [section],
   );
-  const closeInTab = useCallback(
-    () => setOpenRun((prev) => ({ ...prev, [tab]: null })),
-    [tab],
+  const closeInSection = useCallback(
+    () => setOpenRun((prev) => ({ ...prev, [section]: null })),
+    [section],
   );
 
-  const runId = tab === "corpus" ? null : (openRun[tab] ?? null);
+  const kind = KIND[section];
+  const runId = kind ? (openRun[section] ?? null) : null;
+
+  const crumbs = useMemo(() => {
+    const base = CRUMB[section];
+    if (!runId) return base;
+    return [...base, runTitle[runId] ?? "Run"];
+  }, [section, runId, runTitle]);
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-50 flex h-12 items-stretch justify-between border-b bg-card">
-          <div className="flex items-center gap-3 px-5">
-            <img src="/logo-readily.svg" alt="Readily" className="block h-[15px]" />
-            <span className="h-[18px] w-px bg-border" />
-            <span className="label-1">Regulatory Evidence</span>
-          </div>
-
-          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="justify-center">
-            <TabsList className="h-auto self-stretch rounded-none border-0 bg-transparent p-0">
-              {TABS.map(([key, label]) => (
-                <TabsTrigger
-                  key={key}
-                  value={key}
-                  className="h-12 rounded-none border-0 border-l px-5 text-[11px] uppercase tracking-[0.06em] text-muted-foreground data-[state=active]:bg-obsidian data-[state=active]:text-cloud data-[state=active]:shadow-none"
-                >
-                  {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </header>
-
-        <main className="mx-auto w-full max-w-[1440px] flex-1 px-5 pb-16 pt-7">
-          {tab === "corpus" ? (
-            <Corpus />
-          ) : runId ? (
-            <RunView runId={runId} onExit={closeInTab} />
-          ) : (
-            <Launcher
-              kind={tab}
-              health={health}
-              onStarted={openInTab}
-              onOpen={openInTab}
-            />
-          )}
-        </main>
-
-        <footer className="border-t bg-card px-5 py-3.5 text-xs text-muted-foreground">
-          {health ? (
+    <TooltipProvider delayDuration={250}>
+      <Shell
+        section={section}
+        onSection={setSection}
+        crumbs={crumbs}
+        footer={
+          health ? (
             <>
-              {health.corpus.documents} policies · {health.corpus.chunks} indexed passages ·{" "}
+              {health.corpus.documents} policies · {health.corpus.chunks} indexed
+              passages ·{" "}
               {health.llm_configured
                 ? `${health.models.reasoning} for judgement, ${health.models.fast} for retrieval`
                 : "no API key configured"}
             </>
           ) : (
             "…"
-          )}
-        </footer>
-      </div>
+          )
+        }
+      >
+        {kind === null ? (
+          <Corpus />
+        ) : runId ? (
+          <RunView runId={runId} onExit={closeInSection} />
+        ) : (
+          <Launcher
+            kind={kind}
+            health={health}
+            onStarted={openInSection}
+            onOpen={openInSection}
+          />
+        )}
+      </Shell>
     </TooltipProvider>
   );
 }
