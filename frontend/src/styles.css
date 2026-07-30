@@ -37,7 +37,12 @@
 
 :root {
   /* -- brand ------------------------------------------------------------- */
-  --brand-obsidian: #030303;
+  /* Readily's obsidian is #030303. Lifted a touch for use as a large solid
+     fill — pure black at that scale reads harsh against the warm surfaces and
+     shows banding on the active nav item. The true value stays available below
+     for hairlines and type, where it is correct. */
+  --brand-obsidian: #141414;
+  --brand-obsidian-true: #030303;
   --brand-meadow: #34a382;
   --brand-mint: #8eeba5;
   --brand-sky: #29cae6;
@@ -47,7 +52,7 @@
   --brand-stone: #bcb4ab;
 
   /* -- design-system neutrals -------------------------------------------- */
-  --ds-neutral-900: #030303;
+  --ds-neutral-900: #141414;
   --ds-neutral-800: #232323;
   --ds-neutral-700: #626262;
   --ds-neutral-500: #818181;
