@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowUpDown, Download, Loader2, Square } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, ChevronLeft, Download, Loader2, Square } from "lucide-react";
 import { ANSWER_LABEL, COVERAGE_LABEL, STATUS_LABEL, api, streamRun } from "@/lib/api";
 import type { Item, ReviewState, Run } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -19,10 +19,6 @@ import { EvidencePanel } from "./EvidencePanel";
 type Filter = "all" | "supported" | "partial" | "not_found" | "error" | "flagged" | "conflicts";
 type Order = "form" | "risk";
 
-/** Header is 52px and the panel pins directly beneath it. One constant so the
- *  sticky offset and the available height cannot drift — they had, by 20px,
- *  which left dead space at the foot of the panel. */
-const HEADER_H = 52;
 
 /** Guide coverage verdicts map onto the questionnaire's three, so filters,
  *  tallies and chips stay one code path. */
@@ -280,6 +276,28 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
   return (
     <div className="flex flex-col gap-4">
       {/* ------------------------------------------------ header */}
+      {open ? (
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setSelected(null)}>
+            <ChevronLeft className="size-3.5" /> All {rows.length}
+          </Button>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+            {run.title}
+          </span>
+          <span className="hidden shrink-0 items-center gap-3 text-[11px] text-muted-foreground sm:flex">
+            <span><b className="font-medium text-score-pass">{counts.supported}</b> {isGuide ? "covered" : "supported"}</span>
+            <span><b className="font-medium text-score-warn">{counts.partial}</b> partial</span>
+            <span><b className="font-medium">{counts.not_found}</b> {isGuide ? "gaps" : "not found"}</span>
+            {conflicts > 0 && <span><b className="font-medium">{conflicts}</b> conflicts</span>}
+            <span><b className="font-medium">{accepted}</b> accepted</span>
+          </span>
+          <Button asChild variant="secondary" size="sm" className="h-7 shrink-0 text-xs">
+            <a href={`/api/runs/${run.id}/export.csv`}>
+              <Download className="size-3.5" /> CSV
+            </a>
+          </Button>
+        </div>
+      ) : (
       <div className="flex flex-col gap-2.5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
@@ -332,16 +350,19 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
           </div>
         )}
       </div>
+      )}
 
       {/* ------------------------------------------------ tallies */}
-      <div className="flex flex-wrap divide-x divide-border overflow-hidden rounded-lg border bg-card">
-        {stats.map(([k, v, tone]) => (
-          <div key={k} className="min-w-[104px] flex-1 px-4 py-3">
-            <div className={`font-serif text-2xl font-light leading-none ${tone}`}>{v}</div>
-            <div className="label-1 mt-1.5">{k}</div>
-          </div>
-        ))}
-      </div>
+      {!open && (
+        <div className="flex flex-wrap divide-x divide-border overflow-hidden rounded-lg border bg-card">
+          {stats.map(([k, v, tone]) => (
+            <div key={k} className="min-w-[92px] flex-1 px-3.5 py-2">
+              <div className={`text-lg font-semibold leading-tight ${tone}`}>{v}</div>
+              <div className="label-1">{k}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ------------------------------------------------ filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -375,23 +396,12 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
       {/* ------------------------------------------------ list + panel */}
       <Card
         className={`overflow-hidden p-0 ${
- open
-            ? "grid grid-cols-1 items-start lg:grid-cols-[minmax(250px,320px)_minmax(0,1fr)]"
+          open
+            ? "grid grid-cols-1 lg:h-[calc(100vh-13rem)] lg:grid-cols-[minmax(250px,330px)_minmax(0,1fr)]"
             : ""
         }`}
       >
-        <div
-          className={
-            open
-              ? "min-w-0 lg:sticky lg:overflow-y-auto lg:border-r"
-              : "min-w-0"
-          }
-          style={
-            open
-              ? { top: HEADER_H, maxHeight: `calc(100vh - ${HEADER_H}px)` }
-              : undefined
-          }
-        >
+        <div className={open ? "min-w-0 lg:h-full lg:overflow-y-auto lg:border-r" : "min-w-0"}>
           {open ? (
             /* Summary column: number, snippet, citation, status dot. Keeping six
                columns and adding a panel left the question text ~220px of a
@@ -574,7 +584,6 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
             run={run}
             item={selectedItem}
             position={{ index: index + 1, total: rows.length }}
-            headerOffset={HEADER_H}
             onPrev={index > 0 ? () => go(-1) : undefined}
             onNext={index < rows.length - 1 ? () => go(1) : undefined}
             onClose={() => setSelected(null)}

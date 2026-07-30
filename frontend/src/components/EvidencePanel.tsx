@@ -107,7 +107,6 @@ export function EvidencePanel({
   run,
   item,
   position,
-  headerOffset,
   onPrev,
   onNext,
   onClose,
@@ -118,7 +117,6 @@ export function EvidencePanel({
   item: Item;
   /** 1-based place in the visible queue, for the "3 of 64" counter. */
   position: { index: number; total: number };
-  headerOffset: number;
   onPrev?: () => void;
   onNext?: () => void;
   onClose: () => void;
@@ -207,10 +205,7 @@ export function EvidencePanel({
     : STATUS_LABEL[result?.status ?? "error"];
 
   return (
-    <aside
-      className="border-t bg-card lg:sticky lg:overflow-y-auto lg:border-t-0"
-      style={{ top: headerOffset, maxHeight: `calc(100vh - ${headerOffset}px)` }}
-    >
+    <aside className="min-w-0 border-t bg-card lg:h-full lg:overflow-y-auto lg:border-t-0">
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-5 py-2.5">
         <span className="label-1 shrink-0">
           {isGuide ? `Obligation ${item.id}` : `Question ${item.number}`}
