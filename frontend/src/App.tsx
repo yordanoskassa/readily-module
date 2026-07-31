@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import type { Health, RunSummary } from "@/lib/api";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Corpus } from "./components/Corpus";
+import { Landing } from "./components/Landing";
 import { Launcher } from "./components/Launcher";
 import { RunView } from "./components/RunView";
 import { Shell } from "./components/Shell";
@@ -22,7 +23,21 @@ const CRUMB: Record<Section, string[]> = {
   policies: ["Policies"],
 };
 
+/* The landing page is shown once and then remembered, so a reviewer who reloads
+ * the app does not have to click past it every time. `?intro` forces it back. */
+const SEEN_KEY = "readily.intro.seen";
+
+function introWanted(): boolean {
+  if (new URLSearchParams(window.location.search).has("intro")) return true;
+  try {
+    return localStorage.getItem(SEEN_KEY) !== "1";
+  } catch {
+    return true; // private mode: show it rather than crash
+  }
+}
+
 export default function App() {
+  const [intro, setIntro] = useState(introWanted);
   const [section, setSection] = useState<Section>("audit");
   const [health, setHealth] = useState<Health | null>(null);
   // One open run per module, so moving between sections keeps your place.
@@ -65,6 +80,17 @@ export default function App() {
     if (!runId) return base;
     return [...base, runTitle[runId] ?? "Run"];
   }, [section, runId, runTitle]);
+
+  const enter = useCallback(() => {
+    try {
+      localStorage.setItem(SEEN_KEY, "1");
+    } catch {
+      /* private mode — the gate just reappears next load */
+    }
+    setIntro(false);
+  }, []);
+
+  if (intro) return <Landing onEnter={enter} />;
 
   return (
     <TooltipProvider delayDuration={250}>
