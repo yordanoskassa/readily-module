@@ -337,8 +337,22 @@ export function EvidencePanel({
             )}
 
             <Separator />
-            <p className="label-1">Why you might not trust it</p>
 
+            {/* Everything above is the answer; everything below is how to
+             *  falsify it. That distinction is the product, so the heading is
+             *  a real heading and its fields are nested under a rail — as a
+             *  peer-styled micro-label it read as just another field. */}
+            <div className="flex flex-col gap-1">
+              <h3 className="text-[13px] font-semibold tracking-tight">
+                Why you might not trust it
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Where this answer could be wrong, and what to check before you
+                submit it.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-5 border-l border-border pl-4">
             {result.reasoning && (
               <Field label="How this maps to the obligation">{result.reasoning}</Field>
             )}
@@ -412,6 +426,7 @@ export function EvidencePanel({
                 </div>
               </Field>
             )}
+            </div>
           </>
         )}
 
