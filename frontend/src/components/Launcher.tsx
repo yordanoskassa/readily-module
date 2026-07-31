@@ -169,10 +169,7 @@ export function Launcher({
             />
             <p className="max-w-md text-xs text-muted-foreground">
               {isQ ? (
-                <>
-                  A full 64-question pass takes about 13 minutes and a few dollars of model
-                  calls. Cap it to try the flow quickly.
-                </>
+                <>Caps how many questions get answered. Leave blank to run them all.</>
               ) : (
                 <>
                   Extraction always reads the whole guide. This caps how many obligations get
