@@ -20,7 +20,7 @@ const VIDEO_ID = "aqz-KE-bpKQ";
 const FACTS = [
   ["373", "policy PDFs indexed"],
   ["3,632", "pages of source text"],
-  ["168", "citations, all verified"],
+  ["167", "citations, all verified"],
 ];
 
 export function Landing({ onEnter }: { onEnter: () => void }) {

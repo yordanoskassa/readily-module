@@ -197,7 +197,7 @@ immediately — no API key and no waiting.
 | --- | --- |
 | Completed | 64 / 64, zero errors |
 | Verdicts | 11 supported · 41 partial · 12 not found |
-| Citations | **168 produced, 168 verified — every one an exact character-for-character match** |
+| Citations | **167 produced, 167 verified — every one an exact character-for-character match** |
 | Withheld | 0 quotes failed verification |
 | Conflicts | 9 questions where the sweep found contradicting or narrowing language |
 

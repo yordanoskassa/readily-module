@@ -192,8 +192,10 @@ async def ask(item: dict, question: str) -> dict:
             cache_key="ask",
         )
     except llm.LLMError as exc:
+        # `error` marks this as a failed call rather than a real answer, so the
+        # caller can refuse to write it into the item's audit trail.
         return {"answer": f"Could not answer: {exc}", "quotes": [],
-                "changes_verdict": False}
+                "changes_verdict": False, "error": str(exc)}
 
     quotes = []
     if docs:
@@ -337,6 +339,16 @@ async def set_citation(item: dict, chunk_id: int, quote: str = "") -> dict | Non
     else:
         s = get_settings()
         covers = "Selected from the passage you chose."
+        # Raised before the try below, whose `except llm.LLMError` would
+        # otherwise swallow it: with no key the picker never ran, so reporting
+        # "could not verify a quote" would tell her the passage failed the
+        # verbatim check when the check never happened.
+        if not s.llm_enabled:
+            raise llm.LLMNotConfigured(
+                "ANTHROPIC_API_KEY is not set, so no sentence could be "
+                "selected from that passage. Type the quote you want instead — "
+                "it is checked against the source without a model."
+            )
         try:
             data = await llm.structured(
                 system=PICK_SYSTEM,

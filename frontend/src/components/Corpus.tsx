@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Candidate, DocRow } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,81 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Chip, Empty, Spinner } from "./bits";
 
 const ALL = "__all__";
+
+/* A search hit opens into the page it came from.
+ *
+ * The excerpt is a truncated chunk, which is enough to judge relevance and not
+ * enough to judge meaning — the sentence that changes the answer is usually the
+ * one just outside it. Clicking pulls the surrounding page text from the same
+ * endpoint the evidence panel uses, so "read it in context" behaves the same
+ * way wherever she is in the app. */
+function SearchHit({ hit }: { hit: Candidate }) {
+  const [open, setOpen] = useState(false);
+  const [pages, setPages] = useState<{ page: number; text: string }[] | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open || pages || !hit.doc_id) return;
+    let live = true;
+    api
+      .context(hit.doc_id, hit.page_start ?? 1, hit.page_end ?? hit.page_start ?? 1)
+      .then((r) => live && setPages(r.pages))
+      .catch((e) => live && setError(String(e.message ?? e)));
+    return () => {
+      live = false;
+    };
+  }, [open, pages, hit.doc_id, hit.page_start, hit.page_end]);
+
+  return (
+    <Card className="gap-1.5 p-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-start gap-2 text-left"
+      >
+        {open ? (
+          <ChevronDown className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          <strong className="font-mono text-[13px]">{hit.cite}</strong>
+          <span className="truncate text-xs text-muted-foreground">{hit.title}</span>
+          {hit.heading && <Chip>{hit.heading}</Chip>}
+        </span>
+      </button>
+
+      {!open && (
+        <p className="pl-5 text-xs leading-relaxed text-muted-foreground">
+          {hit.excerpt?.slice(0, 420)}…
+        </p>
+      )}
+
+      {open && (
+        <div className="pl-5">
+          {error ? (
+            <p className="text-xs text-muted-foreground">Could not load the page: {error}</p>
+          ) : !pages ? (
+            <Skeleton className="h-16 w-full" />
+          ) : (
+            <div className="max-h-96 overflow-y-auto rounded-md border bg-muted/40 px-3.5 py-3 font-mono text-[11.5px] leading-relaxed">
+              {pages.map((pg) => (
+                <div key={pg.page} className="mb-3.5 whitespace-pre-wrap break-words">
+                  <div className="label-1 mb-1">Page {pg.page}</div>
+                  {pg.text}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 /** The P&P library, plus a raw search box.
  *
@@ -125,16 +197,7 @@ export function Corpus() {
               </p>
             )}
             {results.map((r, i) => (
-              <Card key={i} className="gap-1.5 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <strong className="font-mono text-[13px]">{r.cite}</strong>
-                  <span className="truncate text-xs text-muted-foreground">{r.title}</span>
-                  {r.heading && <Chip>{r.heading}</Chip>}
-                </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {r.excerpt?.slice(0, 420)}…
-                </p>
-              </Card>
+              <SearchHit key={i} hit={r} />
             ))}
           </div>
         )}

@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import interact
+from . import llm
 from . import runs as runs_mod
 from .config import get_settings
 from .db import init_db, session
@@ -297,7 +298,17 @@ async def ask_item(run_id: str, key: str, body: AskBody) -> dict:
     if not body.question.strip():
         raise HTTPException(400, "question is required")
     run, item = _find_item(run_id, key)
+    if not SETTINGS.llm_enabled:
+        raise HTTPException(
+            503,
+            "ANTHROPIC_API_KEY is not set, so follow-up questions cannot be "
+            "answered. The recorded evidence below is still readable.",
+        )
     answer = await interact.ask(item, body.question.strip())
+    if answer.get("error"):
+        # A failed call is not an answer. Writing it into the thread would put
+        # an error string in the audit trail as though the model had replied.
+        raise HTTPException(502, answer["answer"])
     # Kept on the item so the exchange is part of the audit trail, not a
     # transient chat that disappears on refresh.
     item.setdefault("thread", []).append(
@@ -339,6 +350,9 @@ async def set_item_citation(run_id: str, key: str, body: CiteBody) -> dict:
     run, item = _find_item(run_id, key)
     try:
         citation = await interact.set_citation(item, body.chunk_id, body.quote)
+    except llm.LLMNotConfigured as exc:
+        # Distinct from a failed verbatim check — nothing was verified at all.
+        raise HTTPException(503, str(exc)) from exc
     except interact.QuoteNotInSource as exc:
         # Her own wording failed the verbatim check. Say so rather than
         # substituting a different quote and reporting success.
