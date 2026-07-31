@@ -95,6 +95,17 @@ export default function App() {
     setIntro(false);
   }, []);
 
+  /* Returning to the landing page clears the remembered dismissal, so the
+   * mark behaves like a home link rather than a one-shot the app forgets. */
+  const home = useCallback(() => {
+    try {
+      localStorage.removeItem(SEEN_KEY);
+    } catch {
+      /* private mode — nothing was stored to clear */
+    }
+    setIntro(true);
+  }, []);
+
   if (intro) return <Landing onEnter={enter} />;
 
   return (
@@ -103,6 +114,7 @@ export default function App() {
         section={section}
         onSection={setSection}
         crumbs={crumbs}
+        onHome={home}
         footer={
           health ? (
             <>

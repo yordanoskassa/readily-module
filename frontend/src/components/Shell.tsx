@@ -117,12 +117,15 @@ export function Shell({
   onSection,
   crumbs,
   footer,
+  onHome,
   children,
 }: {
   section: Section;
   onSection: (s: Section) => void;
   crumbs: Crumb[];
   footer: ReactNode;
+  /** Back to the landing page — the mark is the conventional way home. */
+  onHome: () => void;
   children: ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -156,15 +159,17 @@ export function Shell({
             {collapsed ? (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span>
+                  <button type="button" onClick={onHome} aria-label="Home">
                     <LogoMark className="size-6 text-obsidian" />
-                  </span>
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">{DISCLAIMER}</TooltipContent>
               </Tooltip>
             ) : (
               <>
-                <Logo className="h-6 shrink-0 text-obsidian" />
+                <button type="button" onClick={onHome} aria-label="Home">
+                  <Logo className="h-6 shrink-0 text-obsidian" />
+                </button>
                 <DemoBadge />
               </>
             )}
@@ -289,7 +294,9 @@ export function Shell({
             {/* Small screens drop the sidebar, so the mark — and its badge —
                 return here. */}
             <span className="flex shrink-0 items-center gap-2 md:hidden">
-              <Logo className="h-6 shrink-0 text-obsidian" />
+              <button type="button" onClick={onHome} aria-label="Home">
+                <Logo className="h-6 shrink-0 text-obsidian" />
+              </button>
               <DemoBadge />
             </span>
 
