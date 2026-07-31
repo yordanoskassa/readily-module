@@ -13,9 +13,11 @@ import { Logo } from "./Logo";
 
 const REPO = "https://github.com/yordanoskassa/readily-module";
 
-/* Swap for the walkthrough. `youtube-nocookie` avoids setting tracking cookies
- * on a page the reviewer never opted into. */
-const VIDEO_ID = "aqz-KE-bpKQ";
+/* The walkthrough. Loom's own embed markup pads a fixed percentage to hold the
+ * recording's aspect ratio; this keeps that ratio rather than forcing 16:9,
+ * which would letterbox a screen capture that is not exactly that shape. */
+const VIDEO_SRC = "https://www.loom.com/embed/3b13d10efa69484b8b067c95ecefc16d";
+const VIDEO_RATIO = "67.75407779171894%";
 
 const FACTS = [
   ["373", "policy PDFs indexed"],
@@ -73,12 +75,14 @@ export function Landing({ onEnter }: { onEnter: () => void }) {
           </div>
 
           <div className="mt-9 overflow-hidden rounded-xl border border-border bg-muted">
-            <div className="aspect-video">
+            <div
+              className="relative h-0"
+              style={{ paddingBottom: VIDEO_RATIO }}
+            >
               <iframe
-                className="size-full"
-                src={`https://www.youtube-nocookie.com/embed/${VIDEO_ID}`}
+                className="absolute left-0 top-0 size-full"
+                src={VIDEO_SRC}
                 title="Walkthrough"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />
             </div>
