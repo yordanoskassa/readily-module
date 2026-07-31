@@ -23,21 +23,11 @@ const CRUMB: Record<Section, string[]> = {
   policies: ["Policies"],
 };
 
-/* The landing page is shown once and then remembered, so a reviewer who reloads
- * the app does not have to click past it every time. `?intro` forces it back. */
-const SEEN_KEY = "readily.intro.seen";
-
-function introWanted(): boolean {
-  if (new URLSearchParams(window.location.search).has("intro")) return true;
-  try {
-    return localStorage.getItem(SEEN_KEY) !== "1";
-  } catch {
-    return true; // private mode: show it rather than crash
-  }
-}
-
 export default function App() {
-  const [intro, setIntro] = useState(introWanted);
+  /* `/` is the landing page, always. Remembering a dismissal made the address
+   * mean two different things depending on whether you had been here before,
+   * which is the wrong trade for a link someone opens once to review. */
+  const [intro, setIntro] = useState(true);
   const [section, setSection] = useState<Section>("audit");
   const [health, setHealth] = useState<Health | null>(null);
   // One open run per module, so moving between sections keeps your place.
@@ -86,25 +76,9 @@ export default function App() {
     ];
   }, [section, runId, runTitle, closeInSection]);
 
-  const enter = useCallback(() => {
-    try {
-      localStorage.setItem(SEEN_KEY, "1");
-    } catch {
-      /* private mode — the gate just reappears next load */
-    }
-    setIntro(false);
-  }, []);
+  const enter = useCallback(() => setIntro(false), []);
 
-  /* Returning to the landing page clears the remembered dismissal, so the
-   * mark behaves like a home link rather than a one-shot the app forgets. */
-  const home = useCallback(() => {
-    try {
-      localStorage.removeItem(SEEN_KEY);
-    } catch {
-      /* private mode — nothing was stored to clear */
-    }
-    setIntro(true);
-  }, []);
+  const home = useCallback(() => setIntro(true), []);
 
   if (intro) return <Landing onEnter={enter} />;
 
