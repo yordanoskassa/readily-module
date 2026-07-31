@@ -299,6 +299,18 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
         </div>
       ) : (
       <div className="flex flex-col gap-2.5">
+        {/* Back sits above the title on its own line, where a back control is
+         *  looked for — grouped with Export and Stop on the right it read as
+         *  one more action rather than the way out. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onExit}
+          className="-ml-2 h-7 w-fit px-2 text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft className="size-3.5" /> All runs
+        </Button>
+
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <span className="label-1">
@@ -325,9 +337,6 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
                 <Square className="size-3.5" /> Stop
               </Button>
             )}
-            <Button variant="secondary" size="sm" onClick={onExit}>
-              <ChevronLeft className="size-3.5" /> All runs
-            </Button>
           </div>
         </div>
 
