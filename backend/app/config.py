@@ -58,14 +58,14 @@ class Settings(BaseSettings):
     verify_passages: int = 10
 
     # --- evidence mode ---
-    # "documents" sends whole shortlisted policies to the reasoning model;
-    # "passages" sends the top chunks. The corpus averages 9.7 pages (~6.2k
-    # tokens) per policy, so a document shortlist fits in context comfortably
-    # and a passage that lexical search ranked poorly can no longer be missed.
-    # Recall failures are silent — nothing downstream can flag a policy that
-    # retrieval never surfaced — so the passage-level recall risk is the one
-    # error the trust layer cannot cover.
-    evidence_mode: str = "documents"
+    # "passages" sends the top-ranked chunks to the reasoning model;
+    # "documents" sends whole shortlisted policies. The corpus averages 9.7
+    # pages (~6.2k tokens) per policy, so a document shortlist fits in context
+    # comfortably — but it costs ~32x the input tokens, and it has only been
+    # measured on 12 of the 64 questions (see the README). `passages` is the
+    # default because it is the mode every published number was produced by and
+    # the mode the runs shipped in `index.db` came from.
+    evidence_mode: str = "passages"
     # Whole policies to send, and the ceiling on their combined size. The
     # budget matters because the corpus is skewed: the median policy is ~4.9k
     # tokens but AA.1000 is ~66k, so a fixed document count has a 10x spread.
