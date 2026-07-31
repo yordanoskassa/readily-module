@@ -7,7 +7,7 @@ import { Landing } from "./components/Landing";
 import { Launcher } from "./components/Launcher";
 import { RunView } from "./components/RunView";
 import { Shell } from "./components/Shell";
-import type { Section } from "./components/Shell";
+import type { Crumb, Section } from "./components/Shell";
 
 /** Section → the module kind it drives. `policies` has no runs of its own. */
 const KIND: Record<Section, "questionnaire" | "guide" | null> = {
@@ -75,11 +75,16 @@ export default function App() {
   const kind = KIND[section];
   const runId = kind ? (openRun[section] ?? null) : null;
 
-  const crumbs = useMemo(() => {
+  /* With a run open, the section crumb becomes the way back to its run list —
+   * that trail is the first thing people click to leave a run. */
+  const crumbs = useMemo<Crumb[]>(() => {
     const base = CRUMB[section];
     if (!runId) return base;
-    return [...base, runTitle[runId] ?? "Run"];
-  }, [section, runId, runTitle]);
+    return [
+      ...base.map((label) => ({ label, onClick: closeInSection })),
+      runTitle[runId] ?? "Run",
+    ];
+  }, [section, runId, runTitle, closeInSection]);
 
   const enter = useCallback(() => {
     try {

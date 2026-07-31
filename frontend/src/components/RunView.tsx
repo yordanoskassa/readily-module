@@ -325,8 +325,8 @@ export function RunView({ runId, onExit }: { runId: string; onExit: () => void }
                 <Square className="size-3.5" /> Stop
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={onExit}>
-              All runs
+            <Button variant="secondary" size="sm" onClick={onExit}>
+              <ChevronLeft className="size-3.5" /> All runs
             </Button>
           </div>
         </div>

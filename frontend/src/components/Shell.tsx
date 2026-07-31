@@ -17,6 +17,10 @@ import { Logo, LogoMark } from "./Logo";
 /** The sections this module implements. */
 export type Section = "audit" | "change" | "policies";
 
+/** A breadcrumb. Give it an `onClick` and it renders as a control — people try
+ *  to click the trail to get back, so an inert one is a dead end. */
+export type Crumb = string | { label: string; onClick: () => void };
+
 /** Shown wherever Readily's mark appears. This is a take-home exercise built
  *  against Readily's public brand — it is not their product, and nothing here
  *  should be readable as an official build. */
@@ -117,7 +121,7 @@ export function Shell({
 }: {
   section: Section;
   onSection: (s: Section) => void;
-  crumbs: string[];
+  crumbs: Crumb[];
   footer: ReactNode;
   children: ReactNode;
 }) {
@@ -293,17 +297,28 @@ export function Shell({
               <ol className="flex min-w-0 items-center gap-1.5 text-[12.5px]">
                 {crumbs.map((c, i) => {
                   const last = i === crumbs.length - 1;
+                  const label = typeof c === "string" ? c : c.label;
+                  const onClick = typeof c === "string" ? undefined : c.onClick;
                   return (
-                    <li key={`${c}-${i}`} className="flex min-w-0 items-center gap-1.5">
-                      <span
-                        aria-current={last ? "page" : undefined}
-                        className={cn(
-                          "truncate",
-                          last ? "font-medium text-foreground" : "text-muted-foreground",
-                        )}
-                      >
-                        {c}
-                      </span>
+                    <li key={`${label}-${i}`} className="flex min-w-0 items-center gap-1.5">
+                      {onClick ? (
+                        <button
+                          onClick={onClick}
+                          className="truncate rounded-sm text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                        >
+                          {label}
+                        </button>
+                      ) : (
+                        <span
+                          aria-current={last ? "page" : undefined}
+                          className={cn(
+                            "truncate",
+                            last ? "font-medium text-foreground" : "text-muted-foreground",
+                          )}
+                        >
+                          {label}
+                        </span>
+                      )}
                       {!last && <ChevronRight className="size-3 shrink-0 text-slate-400" />}
                     </li>
                   );
